@@ -29,6 +29,7 @@ set_display_window_mode({ mode })
 get_display_window_state()
 get_display_monitors()
 set_display_monitor({ monitorIndex })
+quit_application()
 get_wallpaper_engine_status()
 configure_wallpaper_engine({ settings })
 apply_wallpaper_scene({ scene })
@@ -62,7 +63,7 @@ snapshot (`executablePath`, `monitorIndex`, every allowlisted scene playlist,
 manual scene lock, fallback preference, and `overlayMonitorIndex`) before
 invoking this command. Its `monitorIndex` is passed only to Wallpaper Engine's
 `-monitor` argument. `set_display_monitor` separately validates a current
-platform monitor index, moves the overlay there, and restores fullscreen. Each
+platform monitor index and centers the regular app window there. Each
 per-scene **Test**
 action first applies the validated snapshot and then invokes
 `test_wallpaper_scene`, which deliberately bypasses duplicate suppression.
@@ -112,19 +113,13 @@ window operation succeeds. Its payload is `{ action, visible }`, where
 `action` is `toggle`, `interactive`, `debug`, or `settings`; the `visible`
 boolean is the resulting native visibility. This lets the frontend map a
 toggle from the actual hide/show result instead of guessing based on stale web
-state. Interactive/debug and settings shortcuts restore pointer input before
-showing the window, so the first click works. A shortcut also completes the
-native startup-ready handshake, preventing a late `mark_overlay_ready` call
-from re-showing an overlay the user just hid.
+state. A shortcut also completes the native startup-ready handshake, preventing
+a late `mark_overlay_ready` call from re-showing a window the user just hid.
 
-On Windows, a native monitor can emit `ambient-glass://input-activity` while
-the ready, visible overlay is click-through and in `ambient` or `sleep` mode.
-It observes only that the session's last-input tick changed and sends the fixed
-payload `{ source: "windowsSession" }`; it never forwards raw keyboard, mouse,
-pointer, button, device, tick, timestamp, or process data. The monitor is not a
-background service and does not claim wake-from-sleep capability. It is a
-privacy-preserving fallback for a click-through, app-active display; global
-shortcuts remain the recovery path on every platform.
+Ambient Glass is a regular desktop window and does not run a native
+session-input poller. Its webview receives its own keyboard and pointer input
+directly, while global shortcuts remain optional conveniences on every
+platform.
 
 ## Native alarm boundary
 
@@ -152,8 +147,7 @@ local chime and retains a WebAudio fallback.
 
 ## Windows validation still required
 
-The configuration targets a transparent, fullscreen, borderless, skipped-
-taskbar overlay. Those behaviors, click-through, the global shortcuts, and
-`wallpaper64.exe` control must be smoke-tested on the Dell XPS running Windows
-and Wallpaper Engine. Non-Windows mock responses are intentionally not proof
-of native behavior.
+The configuration targets a resizable taskbar window with normal title-bar
+controls. Native global shortcuts and `wallpaper64.exe` control must still be
+smoke-tested on the Dell XPS running Windows and Wallpaper Engine.
+Non-Windows mock responses are intentionally not proof of native behavior.

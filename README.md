@@ -1,6 +1,6 @@
 # Ambient Glass
 
-Ambient Glass turns a spare Windows laptop into a quiet, cinematic information display. It is a Tauri 2 + React + TypeScript overlay designed around a restrained Liquid Glass composition: the wallpaper remains the artwork; time, weather, reminders, tasks, scores, and alarms surface only when useful.
+Ambient Glass turns a spare Windows laptop into a quiet, cinematic information display. It is a Tauri 2 + React + TypeScript desktop app designed around a restrained Liquid Glass composition: the internal scene remains the artwork; time, weather, reminders, tasks, scores, and alarms surface only when useful.
 
 The supplied visual source of truth is [design/reference/glance.png](design/reference/glance.png). The behavioral product plan is [PLAN.md](PLAN.md).
 
@@ -14,7 +14,7 @@ The supplied visual source of truth is [design/reference/glance.png](design/refe
 - Local MediaPipe face-detection pipeline with persisted opt-in camera permission, hidden low-resolution stream, one-second sampling, no frame storage or upload.
 - Typed commands and explicit push-to-talk capture. Typed commands always work without credentials.
 - Credential-backed native GitHub, TheSportsDB, optional OpenAI transcription, and optional Google Calendar boundaries. Google uses installed-app PKCE OAuth in the system browser, keeps refresh tokens in the OS credential store, and normalizes only today's display-safe events.
-- A narrow native Wallpaper Engine adapter that validates scene keys, playlist labels, monitor input, and executable layout before invoking only the fixed `openPlaylist` command; settings persist every playlist mapping, manual scene lock, fallback choice, Wallpaper Engine monitor, and overlay-monitor selection.
+- A narrow native Wallpaper Engine adapter that validates scene keys, playlist labels, monitor input, and executable layout before invoking only the fixed `openPlaylist` command; settings persist every playlist mapping, manual scene lock, fallback choice, Wallpaper Engine monitor, and app-window display selection.
 - Tauri settings persistence, autostart, app-active native alarms, native notification, secure credentials, and Windows source configuration. These native behaviors require the Windows validation pass below.
 
 ## Run it
@@ -48,7 +48,7 @@ Keyboard shortcuts:
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+Shift+Space` | Wake or emergency-hide the overlay |
+| `Ctrl+Shift+Space` | Wake or hide Ambient Glass when available |
 | `Ctrl+Shift+I` | Enter interactive mode |
 | `Ctrl+Shift+D` | Toggle debug controls |
 | `Ctrl+Shift+,` | Open settings |
@@ -100,7 +100,7 @@ It never exposes arbitrary shell execution to the webview. On non-Windows hosts 
 
 ### Weather and presence
 
-Open settings, choose **Use current location**, then allow the browser/webview location prompt. Weather refreshes conservatively and uses its cache on failure. Camera access is never requested until you explicitly choose **Enable local camera presence**. That local opt-in is persisted in browser storage or Tauri Store, so later non-preview launches start the same local pipeline automatically; choose **Disable** to stop and release it immediately. The bundled MediaPipe model runs locally; frames are neither saved nor transmitted. If camera permission is denied or unavailable, browser input can wake the preview. On Windows, the visible click-through overlay also treats a changed session last-input tick as a privacy-preserving activity signal while Ambient Glass is active; it sends no key, pointer, button, device, timestamp, or process data to the webview. `Ctrl+Shift+Space` remains the cross-platform recovery shortcut.
+Open settings, choose **Use current location**, then allow the browser/webview location prompt. Weather refreshes conservatively and uses its cache on failure. Camera access is never requested until you explicitly choose **Enable local camera presence**. That local opt-in is persisted in browser storage or Tauri Store, so later non-preview launches start the same local pipeline automatically; choose **Disable** to stop and release it immediately. The bundled MediaPipe model runs locally; frames are neither saved nor transmitted. If camera permission is denied or unavailable, browser input can wake the preview. In the native app, normal keyboard and pointer input remains available in every display mode, and `Ctrl+Shift+Space` is an additional recovery shortcut when it is not claimed by another program.
 
 ### Providers and secrets
 
@@ -126,9 +126,9 @@ Alarms work while Ambient Glass and the computer remain running. In a native bui
 
 This repository was browser-verified and native-source-checked on macOS. The full native GUI/package could not run here because full Xcode is unavailable, and Windows, Wallpaper Engine, and the Dell hardware are outside this host. Do not treat source or browser evidence as proof of desktop behavior. Perform and record these checks on the Dell:
 
-1. Transparent borderless fullscreen overlay, hidden startup flash, no taskbar entry, click-through, and emergency hide shortcut.
+1. Standard resizable taskbar window, title-bar close/minimize/maximize controls, hidden startup flash prevention, and responsive input in every app mode.
 2. Each Wallpaper Engine playlist test plus clear/rain/day/night automatic switching.
-3. Webcam permission, local presence reveal/dismiss, Windows session-input wake while click-through is active, `Ctrl+Shift+Space` recovery, and long-absence sleep.
+3. Webcam permission, local presence reveal/dismiss, keyboard/pointer recovery, `Ctrl+Shift+Space` recovery when available, and long-absence sleep.
 4. Local task persistence, celebration, reminder, alarm, notification, and morning briefing.
 5. Each configured provider independently, including secure token storage and revoked/disconnected behavior. Build with a configured Google Desktop client ID, complete the system-browser OAuth flow, verify today-sync/event creation, then revoke access and verify the local-first fallback.
 6. Startup after a Windows restart, plus a 20-minute CPU/GPU/fan observation with Wallpaper Engine running.
@@ -141,7 +141,7 @@ The exact current evidence and limits live in [artifacts/verification/p0-checkli
 - No unrestricted shell, filesystem, process, or opener permissions are granted to the frontend. The sole opener permission is native-only and restricted to Google’s authorization host for Calendar OAuth.
 - Wallpaper Engine input is validated twice and invoked through separated process arguments.
 - Camera frames stay local and ephemeral.
-- The Windows click-through fallback emits only an activity event—not raw keyboard, mouse, device, tick, timestamp, or process data—and runs only while the visible Ambient Glass overlay is active.
+- Ambient Glass no longer installs a Windows session-input poller; the normal app window receives its own keyboard and pointer events directly.
 - Microphone capture happens only while the user explicitly holds the voice control; temporary audio is discarded after the native transcription request.
 - Non-secret app state uses browser fallback storage during preview and Tauri Store in a native build. Secrets belong in the native credential boundary, never frontend bundles.
 

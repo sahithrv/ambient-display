@@ -421,6 +421,12 @@
           "markdownDescription": "Enables the mark_overlay_ready command without any pre-configured scope."
         },
         {
+          "description": "Enables the quit_application command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-quit-application",
+          "markdownDescription": "Enables the quit_application command without any pre-configured scope."
+        },
+        {
           "description": "Enables the refresh_sports command without any pre-configured scope.",
           "type": "string",
           "const": "allow-refresh-sports",
@@ -575,6 +581,12 @@
           "type": "string",
           "const": "deny-mark-overlay-ready",
           "markdownDescription": "Denies the mark_overlay_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the quit_application command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-quit-application",
+          "markdownDescription": "Denies the quit_application command without any pre-configured scope."
         },
         {
           "description": "Denies the refresh_sports command without any pre-configured scope.",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AmbientDisplay,
   GoogleCalendarSetup,
@@ -15,7 +15,6 @@ import {
   addCalendarDays,
   calendarWeekForDate,
   calendarEventsForDate,
-  createDisplayState,
   createEmptyLocalData,
   createTaskCompletionCelebration,
   dailyTaskInstances,
@@ -30,6 +29,7 @@ import {
   markTaskCompleted,
   markTaskIncomplete,
   modeAllowsPointerEvents,
+  nextScheduledDisplayEvent,
   nextScheduledAlarmOccurrence,
   normalizeWmoCode,
   parseTypedCommand,
@@ -84,6 +84,11 @@ import {
 } from "./services/mockData";
 import { loadNativeLocalData, saveNativeLocalData } from "./services/nativeSettingsStore";
 import {
+  BROWSER_SHORTCUT_EVENT,
+  consumePendingBrowserShortcut,
+  pendingBrowserShortcut,
+} from "./services/browserShortcuts";
+import {
   deleteProviderSecret,
   dismissNativeAlarm,
   getAutostartEnabled,
@@ -107,8 +112,8 @@ import {
   getWallpaperEngineStatus,
   invokeTauri,
   isTauriRuntime,
-  listenForNativeInputActivity,
   listenForNativeShortcuts,
+  quitNativeApplication,
   setNativeWindowMode,
   type NativeShortcutAction,
   type NativeShortcutEvent,
@@ -763,19 +768,46 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
+    if (PREVIEW_CONFIG.frozenNow) {
+      return;
+    }
+
+    // The UI displays minutes, not seconds. Updating the entire application
+    // four times per second was needlessly repainting every glass surface and
+    // is especially costly in a desktop WebView. Align updates to the next
+    // minute so the clock remains exact without a constant render loop.
+    let timer: number | undefined;
+    const scheduleNextMinute = () => {
       const now = Date.now();
-      if (!PREVIEW_CONFIG.frozenNow) {
-        setClockNow(new Date(now));
+      const delay = 60_000 - (now % 60_000) + 16;
+      timer = window.setTimeout(() => {
+        setClockNow(new Date());
+        scheduleNextMinute();
+      }, delay);
+    };
+    scheduleNextMinute();
+    return () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    const scheduled = nextScheduledDisplayEvent(display);
+    if (!scheduled) {
+      return;
+    }
+    const delay = Math.max(0, scheduled.dueAt - Date.now());
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
       setDisplay((current) => {
         const due = dueDisplayEvent(current, now);
-        const afterTimer = due ? transitionDisplay(current, due, now) : current;
-        return transitionForPresence(afterTimer, now, presenceStateRef.current);
+        return due ? transitionDisplay(current, due, now) : current;
       });
-    }, 250);
-    return () => window.clearInterval(interval);
-  }, []);
+    }, delay + 16);
+    return () => window.clearTimeout(timer);
+  }, [display]);
 
   useEffect(() => {
     const recordInput = (event: Event) => {
@@ -795,7 +827,7 @@ export default function App() {
     };
   }, [applyInputActivity]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         if (displayRef.current.mode === "settings") {
@@ -807,32 +839,37 @@ export default function App() {
         }
         return;
       }
-      if (!event.ctrlKey || !event.shiftKey) {
-        return;
-      }
-      if (isTauriRuntime()) {
-        // Native global shortcuts send their completed visibility result over
-        // the Tauri event bridge. Do not apply a second webview transition.
-        event.preventDefault();
-        return;
-      }
-      const key = event.key.toLowerCase();
-      if (key === " ") {
-        event.preventDefault();
-        applyBrowserShortcut("toggle");
-      } else if (key === "i") {
-        event.preventDefault();
-        applyBrowserShortcut("interactive");
-      } else if (key === "d") {
-        event.preventDefault();
-        applyBrowserShortcut("debug");
-      } else if (key === ",") {
-        event.preventDefault();
-        applyBrowserShortcut("settings");
+    };
+    const browserShortcut = (event: Event) => {
+      const action = (event as CustomEvent<unknown>).detail;
+      if (
+        action === "toggle" ||
+        action === "interactive" ||
+        action === "debug" ||
+        action === "settings"
+      ) {
+        consumePendingBrowserShortcut();
+        applyBrowserShortcut(action);
       }
     };
+    const pendingShortcut = pendingBrowserShortcut();
+    const pendingShortcutTimer = pendingShortcut
+      ? window.setTimeout(() => {
+          const action = consumePendingBrowserShortcut();
+          if (action) {
+            applyBrowserShortcut(action);
+          }
+        }, 0)
+      : undefined;
     window.addEventListener("keydown", shortcuts);
-    return () => window.removeEventListener("keydown", shortcuts);
+    window.addEventListener(BROWSER_SHORTCUT_EVENT, browserShortcut);
+    return () => {
+      if (pendingShortcutTimer !== undefined) {
+        window.clearTimeout(pendingShortcutTimer);
+      }
+      window.removeEventListener("keydown", shortcuts);
+      window.removeEventListener(BROWSER_SHORTCUT_EVENT, browserShortcut);
+    };
   }, [applyBrowserShortcut, debugOpen, dispatchDisplay]);
 
   useEffect(() => {
@@ -850,22 +887,6 @@ export default function App() {
       unlisten?.();
     };
   }, [applyShortcut]);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listenForNativeInputActivity(() => applyInputActivity()).then((stop) => {
-      if (disposed) {
-        stop();
-      } else {
-        unlisten = stop;
-      }
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [applyInputActivity]);
 
   useEffect(() => {
     if (PREVIEW_CONFIG.preview) {
@@ -1644,6 +1665,15 @@ export default function App() {
         >
           {autostart ? "Disable startup" : "Enable startup"}
         </button>
+        {isTauriRuntime() ? (
+          <button
+            type="button"
+            className="glass-action glass-action--quiet app-settings__quit"
+            onClick={() => void quitNativeApplication()}
+          >
+            Quit Ambient Glass
+          </button>
+        ) : null}
         <div className="app-settings__secrets">
           <p className="app-settings__eyebrow">Secure provider connections</p>
           <ProviderSecretForm
@@ -1767,23 +1797,19 @@ export default function App() {
   );
 
   return (
-    <div className={`app-shell app-shell--${display.mode}`} data-scene={sceneKey}>
+    <div
+      className={`app-shell app-shell--${display.mode}`}
+      data-display-mode={display.mode}
+      data-scene={sceneKey}
+    >
       <AmbientDisplay
         mode={display.mode}
         contrast={
           weatherFamily === "clear" && weatherForDisplay.isDay ? "light-scene" : "dark-scene"
         }
-        // A missing or failed Wallpaper Engine connection must not leave a
-        // transparent desktop-sized void behind the glass islands. The same
-        // calm internal scene used for deterministic previews becomes the
-        // explicit native offline/failure fallback until the wallpaper health
-        // check or a later retry succeeds.
-        previewBackground={
-          PREVIEW_CONFIG.preview ||
-          !isTauriRuntime() ||
-          wallpaperStatus.state === "error" ||
-          wallpaperFallback.active
-        }
+        // The desktop app owns a calm internal scene, so it stays a readable
+        // standalone window whether Wallpaper Engine is connected or not.
+        previewBackground
         hero={{
           time: heroTime.time,
           meridiem: heroTime.meridiem,
@@ -2048,7 +2074,10 @@ function createInitialDisplay(config: PreviewConfig): DisplayState {
   if (config.preview) {
     return { mode: config.presence ? "glance" : "ambient", enteredAt: now, bootTarget: "ambient" };
   }
-  return createDisplayState(now);
+  // A regular desktop app should open to useful, clickable content. Passive
+  // ambient boot made sense for the old screen-covering overlay but looked
+  // blank and unresponsive in a normal application window.
+  return { mode: "glance", enteredAt: now, bootTarget: "ambient" };
 }
 
 interface InitialProviderData {
@@ -2461,7 +2490,7 @@ function createUnavailableWeatherSnapshot(): WeatherSnapshot {
 
 function inputWakeFallbackMessage(): string {
   return isTauriRuntime()
-    ? "On Windows, local keyboard or mouse activity can wake the click-through overlay; Ctrl+Shift+Space always works."
+    ? "Keyboard and mouse activity can wake the ambient scene; Ctrl+Shift+Space works when available."
     : "Keyboard and mouse wake are available.";
 }
 

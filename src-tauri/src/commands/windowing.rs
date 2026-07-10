@@ -27,6 +27,13 @@ pub fn set_display_window_mode(
     state.set_mode(&app, mode)
 }
 
+/// Exits the normal desktop application explicitly. The same action is
+/// available through the standard title-bar close button.
+#[tauri::command]
+pub fn quit_application(app: AppHandle) {
+    app.exit(0);
+}
+
 /// Retrieves the last mode successfully applied by the native window hook.
 #[tauri::command]
 pub fn get_display_window_state(

@@ -87,6 +87,11 @@
         "description": "Enables the mark_overlay_ready command without any pre-configured scope.",
         "commands": { "allow": ["mark_overlay_ready"], "deny": [] }
       },
+      "allow-quit-application": {
+        "identifier": "allow-quit-application",
+        "description": "Enables the quit_application command without any pre-configured scope.",
+        "commands": { "allow": ["quit_application"], "deny": [] }
+      },
       "allow-refresh-sports": {
         "identifier": "allow-refresh-sports",
         "description": "Enables the refresh_sports command without any pre-configured scope.",
@@ -216,6 +221,11 @@
         "identifier": "deny-mark-overlay-ready",
         "description": "Denies the mark_overlay_ready command without any pre-configured scope.",
         "commands": { "allow": [], "deny": ["mark_overlay_ready"] }
+      },
+      "deny-quit-application": {
+        "identifier": "deny-quit-application",
+        "description": "Denies the quit_application command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["quit_application"] }
       },
       "deny-refresh-sports": {
         "identifier": "deny-refresh-sports",

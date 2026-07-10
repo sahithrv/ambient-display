@@ -727,6 +727,11 @@
 
 .focus-card__tasks {
   margin-top: clamp(14px, 1.35vh, 19px);
+  max-height: clamp(112px, 13.8vh, 166px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(186, 211, 255, 0.42) transparent;
 }
 
 .focus-card__empty {
@@ -1345,8 +1350,8 @@
   place-items: center;
   background: rgba(4, 9, 18, 0.29);
   inset: 0;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .settings-surface__panel {
@@ -1500,8 +1505,8 @@
   box-shadow:
     0 20px 44px -19px rgba(0, 0, 0, 0.76),
     inset 0 1px 1px rgba(255, 255, 255, 0.2);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .command-orb__form {
@@ -2350,7 +2355,10 @@
   }
 }
 
-@media (max-width: 900px), (max-aspect-ratio: 4 / 3) {
+/* A desktop window can be short even when it is wide. Move to the flow layout
+ * before the absolute cards have a chance to overlap, and let the composition
+ * scroll inside the app rather than cover the desktop. */
+@media (max-width: 1150px), (max-height: 850px), (max-aspect-ratio: 4 / 3) {
   .ambient-display {
     min-height: 100svh;
     overflow: auto;

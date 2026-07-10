@@ -32,6 +32,33 @@ test("rainy night remains composed at a second 16:10 viewport", async ({ page })
   await capture(page, "rainy-night-glance-1440x900", 1440, 900);
 });
 
+test("a short desktop window flows cards without overlap", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 840 });
+  await page.goto(preview("time=08:10"));
+
+  const blocks = await page
+    .locator(".hero, .calendar-card, .contributions-card, .focus-card, .scores-card, .alarm-card")
+    .evaluateAll((elements) =>
+      elements.map((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom };
+      }),
+    );
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    for (let comparison = index + 1; comparison < blocks.length; comparison += 1) {
+      const left = blocks[index];
+      const right = blocks[comparison];
+      const overlaps =
+        left.left < right.right &&
+        left.right > right.left &&
+        left.top < right.bottom &&
+        left.bottom > right.top;
+      expect(overlaps).toBe(false);
+    }
+  }
+});
+
 test("ambient and mid-reveal are deterministic", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1200 });
   await page.goto(preview("mode=ambient&presence=0"));

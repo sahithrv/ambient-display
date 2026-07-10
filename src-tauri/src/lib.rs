@@ -70,6 +70,7 @@ pub fn run() {
             commands::alarms::test_native_alarm,
             commands::windowing::mark_overlay_ready,
             commands::windowing::set_display_window_mode,
+            commands::windowing::quit_application,
             commands::windowing::get_display_window_state,
             commands::windowing::get_display_monitors,
             commands::windowing::set_display_monitor,

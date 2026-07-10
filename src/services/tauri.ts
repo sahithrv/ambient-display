@@ -13,11 +13,6 @@ export interface NativeShortcutEvent {
   visible: boolean;
 }
 
-/** Event-only Windows session activity signal; it carries no input contents. */
-export interface NativeInputActivityEvent {
-  source: "windowsSession";
-}
-
 export type TauriInvocation<T> = { ok: true; value: T } | { ok: false; message: string };
 
 export interface WallpaperEngineStatus {
@@ -121,33 +116,6 @@ export async function listenForNativeShortcuts(
   }
 }
 
-/**
- * Receives a native Windows session-activity signal while the overlay is
- * click-through. The payload intentionally excludes keys, pointers, buttons,
- * device details, and native timing values.
- */
-export async function listenForNativeInputActivity(
-  onActivity: (activity: NativeInputActivityEvent) => void,
-): Promise<() => void> {
-  if (!isTauriRuntime()) {
-    return () => undefined;
-  }
-  try {
-    const { listen } = await import("@tauri-apps/api/event");
-    return await listen<unknown>("ambient-glass://input-activity", ({ payload }) => {
-      if (
-        payload &&
-        typeof payload === "object" &&
-        (payload as { source?: unknown }).source === "windowsSession"
-      ) {
-        onActivity({ source: "windowsSession" });
-      }
-    });
-  } catch {
-    return () => undefined;
-  }
-}
-
 export async function applyWallpaperScene(
   scene: string,
   test = false,
@@ -200,4 +168,9 @@ export async function setDisplayMonitor(
 
 export async function setNativeWindowMode(mode: string): Promise<void> {
   await invokeTauri("set_display_window_mode", { mode });
+}
+
+/** Uses the same explicit app exit as the standard title-bar close button. */
+export async function quitNativeApplication(): Promise<void> {
+  await invokeTauri("quit_application");
 }

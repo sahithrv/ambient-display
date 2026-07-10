@@ -24,7 +24,7 @@ export interface ProviderHealth {
 /**
  * Non-secret input accepted by the narrow native Wallpaper Engine command.
  * `monitorIndex` controls Wallpaper Engine's target monitor only; it does not
- * position the Tauri overlay window.
+ * position the Tauri application window.
  */
 export interface WallpaperEngineSettingsInput {
   executablePath?: string;
@@ -36,7 +36,7 @@ export interface WallpaperEngineSettingsInput {
 export interface WallpaperSettings extends WallpaperEngineSettingsInput {
   version: 1;
   playlists: Record<SceneKey, string>;
-  /** Separate from Wallpaper Engine's `monitorIndex`: hosts the overlay itself. */
+  /** Separate from Wallpaper Engine's `monitorIndex`: hosts the app window itself. */
   overlayMonitorIndex: number;
   sceneLock: SceneLock;
   fallbackMode: "automatic" | "force-internal";

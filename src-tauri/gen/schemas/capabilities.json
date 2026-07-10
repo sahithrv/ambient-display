@@ -29,6 +29,7 @@
       "allow-test-native-alarm",
       "allow-mark-overlay-ready",
       "allow-set-display-window-mode",
+      "allow-quit-application",
       "allow-get-display-window-state",
       "allow-get-display-monitors",
       "allow-set-display-monitor",

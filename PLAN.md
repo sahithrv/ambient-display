@@ -679,24 +679,23 @@ Windows Desktop
 
 ## 8.3 Tauri window behavior
 
-Production window configuration should target:
+Production window configuration should target a conventional desktop app:
 
-- Transparent.
-- Borderless/decorations off.
-- Fullscreen on the selected monitor.
-- Skipped in taskbar.
-- Always on top while display mode is active.
-- No default shadow.
-- Hidden until initialization is complete.
-- Pointer events ignored in ambient/glance mode.
-- Pointer events restored in interactive/settings/alarm mode.
-- A global shortcut toggles display mode or hides the overlay.
+- Standard system title bar with close, minimize, and maximize controls.
+- Visible in the taskbar, resizable, and never always-on-top by default.
+- A calm internal visual scene behind the glass composition; the app does not
+  require a transparent fullscreen overlay to remain useful.
+- Hidden only until initialization is complete, then focused as a normal app.
+- Pointer input remains enabled in every display mode.
+- The user can close the window through the title bar or the Settings “Quit
+  Ambient Glass” control. Global shortcuts are optional conveniences and may
+  be unavailable if another program owns them.
 
 Suggested shortcuts:
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Shift+Space` | Show/hide or wake overlay |
+| `Ctrl+Shift+Space` | Show/hide or wake Ambient Glass when available |
 | `Ctrl+Shift+I` | Enter interactive mode |
 | `Ctrl+Shift+D` | Toggle demo/debug controls |
 | `Ctrl+Shift+,` | Open settings |
@@ -1254,7 +1253,8 @@ Wallpaper choice can dominate GPU usage. Prefer efficient video/scene wallpapers
 - Provide text labels for icons.
 - Do not flash rapidly during storms or celebrations.
 - Allow alarm audio and animation intensity to be configured.
-- Provide a simple manual hide/exit shortcut that always works.
+- Provide normal title-bar close controls and an in-app Quit control; shortcuts
+  are additional conveniences rather than the only escape route.
 
 ---
 

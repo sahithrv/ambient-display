@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "test_native_alarm",
     "mark_overlay_ready",
     "set_display_window_mode",
+    "quit_application",
     "get_display_window_state",
     "get_display_monitors",
     "set_display_monitor",

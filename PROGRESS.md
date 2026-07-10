@@ -4,7 +4,7 @@
 
 Browser P0 implementation and native Rust source verification are complete.
 The shell covers Google Calendar OAuth, app-active alarms, Wallpaper Engine
-setup, and overlay-monitor selection. The remaining work is a packaged
+setup, and app-window monitor selection. The remaining work is a packaged
 Windows/Dell validation pass with real credentials and hardware.
 
 ## Completed evidence
@@ -13,7 +13,7 @@ Windows/Dell validation pass with real credentials and hardware.
 - Built the Liquid Glass React/Vite composition, deterministic preview routes,
   centralized display machine, local routines, reminders, alarms, celebration,
   weather/cache, presence opt-in, typed commands, and native source boundary.
-- Implemented native source for transparent Tauri window modes, fixed global
+- Implemented native source for a conventional Tauri desktop window, optional global
   shortcuts, bounded Wallpaper Engine control/retry, OS-keychain credentials,
   GitHub, TheSportsDB, optional OpenAI transcription, and Google Calendar.
 - Added installed-app Google OAuth with PKCE/loopback callback, system-browser
@@ -22,7 +22,7 @@ Windows/Dell validation pass with real credentials and hardware.
   with their own `AMBIENT_GOOGLE_CLIENT_ID` and completes consent.
 - Added a non-secret Wallpaper Engine setup surface for all playlist mappings,
   manual scene lock, internal fallback, Wallpaper Engine monitor, and a
-  separately persisted overlay display selector.
+  separately persisted app-window display selector.
 - Added a native app-active alarm scheduler with durable non-secret schedules,
   snoozes, notification status, and event bridging to the existing alarm UI.
   Its active webview loops a generated, bundled local alarm chime and safely

@@ -26,11 +26,11 @@ describe("display machine", () => {
     expect(modeCanRotateContent(glance.mode)).toBe(true);
   });
 
-  it("keeps pointer events disabled until a mode that needs interaction", () => {
+  it("keeps the regular app window interactive in every display mode", () => {
     const glance = { ...createDisplayState(0), mode: "glance" as const };
     const interactive = transitionDisplay(glance, { type: "ENTER_INTERACTIVE" }, 10);
 
-    expect(modeAllowsPointerEvents(glance.mode)).toBe(false);
+    expect(modeAllowsPointerEvents(glance.mode)).toBe(true);
     expect(modeAllowsPointerEvents(interactive.mode)).toBe(true);
     expect(dueDisplayEvent(interactive, 60_010)).toEqual({ type: "INTERACTION_TIMEOUT" });
     expect(transitionDisplay(interactive, { type: "INTERACTION_TIMEOUT" }, 60_010).mode).toBe(

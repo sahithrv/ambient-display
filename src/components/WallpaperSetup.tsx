@@ -291,10 +291,10 @@ export function WallpaperSetup({
         </label>
         <p className="wallpaper-setup__help" id="wallpaper-monitor-help">
           This changes Wallpaper Engine&apos;s playlist target only; it does not move the Ambient
-          Glass overlay window.
+          Glass app window.
         </p>
         <label className="wallpaper-setup__overlay-monitor">
-          <span>Ambient Glass display</span>
+          <span>Ambient Glass window display</span>
           <select
             aria-describedby="overlay-monitor-help"
             onChange={(event) =>
@@ -317,7 +317,7 @@ export function WallpaperSetup({
           </select>
         </label>
         <p className="wallpaper-setup__help" id="overlay-monitor-help">
-          Save &amp; apply moves the transparent Ambient Glass overlay to this display.
+          Save &amp; apply moves the regular Ambient Glass window to this display.
         </p>
 
         <label className="wallpaper-setup__lock">

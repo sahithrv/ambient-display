@@ -109,6 +109,21 @@
   height: 100%;
 }
 
+/* The standalone window paints its own scene behind the cards, so expensive
+ * backdrop sampling adds GPU work without improving legibility. The layered
+ * gradients above retain the glass character while keeping the app responsive
+ * on integrated laptop graphics. */
+.ambient-display--preview .glass-island__body,
+.ambient-display--preview .glass-capsule__body {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.ambient-display--preview .glass-island__noise,
+.ambient-display--preview .glass-capsule__noise {
+  opacity: 0.055;
+}
+
 .glass-island--glow-none,
 .glass-capsule--glow-none {
   box-shadow:

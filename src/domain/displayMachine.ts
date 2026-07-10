@@ -240,7 +240,11 @@ export function dueDisplayEvent(
 }
 
 export function modeAllowsPointerEvents(mode: DisplayMode): boolean {
-  return mode === "interactive" || mode === "settings" || mode === "alarm";
+  // Ambient Glass is a normal app window, not a click-through desktop overlay.
+  // Every mode keeps the current window usable; the title bar remains an
+  // operating-system escape hatch even while the optional sleep cover is up.
+  void mode;
+  return true;
 }
 
 export function modeShowsGlass(mode: DisplayMode): boolean {

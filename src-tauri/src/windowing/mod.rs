@@ -1,33 +1,17 @@
-//! Native window policy for Ambient Glass's single transparent overlay.
+//! Native window policy for Ambient Glass's single desktop window.
 //!
-//! The frontend owns the display state machine. This module makes each accepted
-//! mode real at the native boundary: ambient/glance states click through to the
-//! desktop, while interactive/settings/alarm states receive pointer input.
+//! The frontend owns the display state machine. The native boundary keeps the
+//! window a conventional, always-recoverable application: it stays in the
+//! taskbar, has standard window controls, and never consumes the desktop via a
+//! fullscreen click-through overlay.
 
 use std::{fmt, sync::Mutex};
-
-#[cfg(target_os = "windows")]
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, Instant},
-};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const SHORTCUT_EVENT: &str = "ambient-glass://shortcut";
-#[cfg(target_os = "windows")]
-const INPUT_ACTIVITY_EVENT: &str = "ambient-glass://input-activity";
-
-#[cfg(target_os = "windows")]
-const INPUT_ACTIVITY_POLL_INTERVAL: Duration = Duration::from_millis(250);
-#[cfg(target_os = "windows")]
-const INPUT_ACTIVITY_DEBOUNCE: Duration = Duration::from_millis(500);
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,15 +29,11 @@ pub enum DisplayWindowMode {
 
 impl DisplayWindowMode {
     const fn click_through(self) -> bool {
-        matches!(
-            self,
-            Self::Booting
-                | Self::Sleep
-                | Self::Ambient
-                | Self::Awakening
-                | Self::Glance
-                | Self::Celebration
-        )
+        // The app used to behave as a desktop-sized overlay. Retaining this
+        // field in the IPC result preserves the existing frontend contract,
+        // while a regular app window must always receive its own input.
+        let _ = self;
+        false
     }
 }
 
@@ -111,16 +91,8 @@ pub struct DisplayWindowState {
     state: Mutex<WindowStateSnapshot>,
 }
 
-/// A Windows-only, process-lifetime activity monitor. It deliberately reads
-/// only Windows' last-input tick and never receives or stores key, pointer,
-/// button, or device data.
 #[derive(Default)]
-pub struct InputActivityMonitor {
-    #[cfg(target_os = "windows")]
-    running: Arc<AtomicBool>,
-    #[cfg(target_os = "windows")]
-    worker: Mutex<Option<JoinHandle<()>>>,
-}
+pub struct InputActivityMonitor;
 
 /// A redacted display descriptor for the settings surface. Monitor names are
 /// useful labels only; no window contents, EDID data, or platform handles
@@ -152,45 +124,16 @@ impl Default for DisplayWindowState {
 }
 
 impl InputActivityMonitor {
-    /// Starts an event-only activity poller on Windows. Other platforms retain
-    /// a no-op managed value so the native lifecycle stays uniform.
+    /// Retained as a no-op lifecycle value for compatibility with the existing
+    /// app setup. A normal desktop window does not need an always-running
+    /// Windows input poller just to recover from click-through mode.
     pub fn start(app: AppHandle) -> Result<Self, WindowingError> {
-        #[cfg(target_os = "windows")]
-        {
-            let running = Arc::new(AtomicBool::new(true));
-            let running_for_worker = Arc::clone(&running);
-            let worker = thread::Builder::new()
-                .name("ambient-glass-input-activity".to_owned())
-                .spawn(move || poll_windows_input_activity(app, running_for_worker))
-                .map_err(|_| {
-                    native_error("Windows input activity monitoring could not be started.")
-                })?;
-            return Ok(Self {
-                running,
-                worker: Mutex::new(Some(worker)),
-            });
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = app;
-            Ok(Self::default())
-        }
+        let _ = app;
+        Ok(Self::default())
     }
 
-    /// Stops the worker before the Tauri process exits. It is idempotent so it
-    /// is also safe when the managed state later drops.
-    pub fn stop(&self) {
-        #[cfg(target_os = "windows")]
-        {
-            self.running.store(false, Ordering::Release);
-            if let Ok(mut worker) = self.worker.lock() {
-                if let Some(worker) = worker.take() {
-                    let _ = worker.join();
-                }
-            }
-        }
-    }
+    /// Kept idempotent so the native lifecycle remains uniform.
+    pub fn stop(&self) {}
 }
 
 impl Drop for InputActivityMonitor {
@@ -215,7 +158,7 @@ impl DisplayWindowState {
         apply_mode(&window, state.mode)?;
         window
             .show()
-            .map_err(|_| native_error("The overlay could not be shown."))?;
+            .map_err(|_| native_error("The app window could not be shown."))?;
 
         state.ready = true;
         state.visible = true;
@@ -231,15 +174,15 @@ impl DisplayWindowState {
         apply_mode(&window, mode)?;
 
         // Alarms are safety-critical relative to the ambient experience: an
-        // active alarm must restore a manually hidden overlay rather than wait
+        // active alarm must restore a manually hidden app window rather than wait
         // for the next global shortcut.
         if matches!(mode, DisplayWindowMode::Alarm) {
             window
                 .show()
-                .map_err(|_| native_error("The alarm overlay could not be shown."))?;
+                .map_err(|_| native_error("The alarm window could not be shown."))?;
             window
                 .set_focus()
-                .map_err(|_| native_error("The alarm overlay could not be focused."))?;
+                .map_err(|_| native_error("The alarm window could not be focused."))?;
         }
 
         let mut state = self.lock()?;
@@ -252,10 +195,11 @@ impl DisplayWindowState {
         Ok(as_result(*self.lock()?))
     }
 
-    /// Places the transparent overlay on one concrete monitor. The webview
-    /// never supplies coordinates: it selects only a bounded index from the
-    /// platform-provided monitor list. Fullscreen is briefly released so the
-    /// operating system applies the requested monitor before it is restored.
+    /// Moves the regular application window to one concrete monitor. The
+    /// webview never supplies coordinates: it selects only a bounded index
+    /// from the platform-provided monitor list. The current window size is
+    /// preserved and centered on the chosen display rather than restoring a
+    /// fullscreen overlay.
     pub fn set_monitor(
         &self,
         app: &AppHandle,
@@ -272,38 +216,38 @@ impl DisplayWindowState {
 
         let was_visible = window
             .is_visible()
-            .map_err(|_| native_error("The overlay visibility could not be checked."))?;
+            .map_err(|_| native_error("The app window visibility could not be checked."))?;
         let was_fullscreen = window
             .is_fullscreen()
-            .map_err(|_| native_error("The overlay fullscreen state could not be checked."))?;
+            .map_err(|_| native_error("The app window fullscreen state could not be checked."))?;
         let previous_position = window
             .outer_position()
-            .map_err(|_| native_error("The overlay position could not be checked."))?;
+            .map_err(|_| native_error("The app window position could not be checked."))?;
         let previous_size = window
             .outer_size()
-            .map_err(|_| native_error("The overlay size could not be checked."))?;
+            .map_err(|_| native_error("The app window size could not be checked."))?;
 
         let move_result = (|| -> Result<(), WindowingError> {
             window.set_fullscreen(false).map_err(|_| {
-                native_error("The overlay could not leave fullscreen to change display.")
+                native_error("The app window could not leave fullscreen to change display.")
             })?;
+            let target_size = monitor.size();
+            let x_offset = i64::from(target_size.width.saturating_sub(previous_size.width)) / 2;
+            let y_offset = i64::from(target_size.height.saturating_sub(previous_size.height)) / 2;
+            let position = tauri::PhysicalPosition::new(
+                i64::from(monitor.position().x).saturating_add(x_offset) as i32,
+                i64::from(monitor.position().y).saturating_add(y_offset) as i32,
+            );
             window
-                .set_position(*monitor.position())
-                .map_err(|_| native_error("The overlay could not move to the selected display."))?;
-            window.set_size(*monitor.size()).map_err(|_| {
-                native_error("The overlay could not size itself for the selected display.")
-            })?;
-            window.set_fullscreen(true).map_err(|_| {
-                native_error("The overlay could not restore fullscreen on the selected display.")
-            })?;
-            Ok(())
+                .set_position(position)
+                .map_err(|_| native_error("The app window could not move to the selected display."))
         })();
 
         if let Err(error) = move_result {
             // A monitor may disappear during a hot-plug or a platform window
             // operation can fail after fullscreen was released. Best-effort
             // restoration preserves the user's prior display rather than
-            // knowingly leaving a partial, interactive window behind.
+            // knowingly leaving a partial window behind.
             restore_window_after_monitor_failure(
                 &window,
                 previous_position,
@@ -316,11 +260,13 @@ impl DisplayWindowState {
 
         if was_visible {
             window.show().map_err(|_| {
-                native_error("The overlay could not return after changing display.")
+                native_error("The app window could not return after changing display.")
             })?;
         } else {
             window.hide().map_err(|_| {
-                native_error("The overlay visibility could not be restored after changing display.")
+                native_error(
+                    "The app window visibility could not be restored after changing display.",
+                )
             })?;
         }
 
@@ -349,7 +295,7 @@ impl DisplayWindowState {
         Ok(DisplayMonitorStatus {
             monitors,
             selected_monitor_index,
-            message: "Select the display that should host the Ambient Glass overlay.".to_owned(),
+            message: "Select the display that should host the Ambient Glass app window.".to_owned(),
         })
     }
 
@@ -377,78 +323,22 @@ impl DisplayWindowState {
 pub fn prepare_main_window(app: &AppHandle) -> Result<(), WindowingError> {
     let window = main_window(app)?;
     window
-        .set_always_on_top(true)
-        .map_err(|_| native_error("The overlay could not stay above the desktop."))?;
-    // Config starts the window hidden. Repeat that policy in Rust so a future
-    // config edit cannot accidentally introduce a startup flash.
+        .set_always_on_top(false)
+        .map_err(|_| native_error("The app window could not leave always-on-top mode."))?;
+    // Config starts hidden so the normal window is only revealed after its
+    // first stable application frame has been painted.
     window
-        .set_ignore_cursor_events(true)
-        .map_err(|_| native_error("The overlay could not enable click-through."))?;
+        .set_ignore_cursor_events(false)
+        .map_err(|_| native_error("The app window could not receive pointer input."))?;
     window
         .hide()
-        .map_err(|_| native_error("The overlay could not start hidden."))?;
+        .map_err(|_| native_error("The app window could not start hidden."))?;
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
-fn poll_windows_input_activity(app: AppHandle, running: Arc<AtomicBool>) {
-    let mut previous_tick = None;
-    let mut last_emitted_at = None;
-
-    while running.load(Ordering::Acquire) {
-        let eligible = app
-            .state::<DisplayWindowState>()
-            .snapshot()
-            .map(|state| {
-                state.ready
-                    && state.visible
-                    && state.click_through
-                    && matches!(
-                        state.mode,
-                        DisplayWindowMode::Ambient | DisplayWindowMode::Sleep
-                    )
-            })
-            .unwrap_or(false);
-
-        if !eligible {
-            // Do not carry an old idle tick into a later passive mode: the
-            // first sample after becoming eligible establishes the baseline.
-            previous_tick = None;
-        } else if let Some(current_tick) = windows_last_input_tick() {
-            let changed = previous_tick
-                .replace(current_tick)
-                .is_some_and(|previous| previous != current_tick);
-            let past_debounce = last_emitted_at
-                .map(|last| last.elapsed() >= INPUT_ACTIVITY_DEBOUNCE)
-                .unwrap_or(true);
-            if changed && past_debounce {
-                // The webview receives only a fixed source tag. The Windows
-                // tick stays native and no raw input contents are collected.
-                let _ = app.emit(INPUT_ACTIVITY_EVENT, InputActivityEvent::windows_session());
-                last_emitted_at = Some(Instant::now());
-            }
-        }
-
-        thread::sleep(INPUT_ACTIVITY_POLL_INTERVAL);
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn windows_last_input_tick() -> Option<u32> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
-
-    let mut info = LASTINPUTINFO {
-        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
-        dwTime: 0,
-    };
-    // SAFETY: `info` is initialized with the documented structure size and is
-    // valid mutable storage for the duration of this synchronous Win32 call.
-    (unsafe { GetLastInputInfo(&mut info) } != 0).then_some(info.dwTime)
-}
-
 /// Register fixed native shortcuts rather than granting the webview permission
-/// to register arbitrary global keys. Shortcut conflicts fail startup loudly so
-/// the emergency-hide guarantee cannot silently disappear.
+/// to register arbitrary global keys. Shortcut conflicts are non-fatal: the
+/// conventional window controls always remain available for exit and recovery.
 pub fn register_shortcuts(app: &AppHandle) -> Result<(), WindowingError> {
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     {
@@ -467,57 +357,60 @@ pub fn register_shortcuts(app: &AppHandle) -> Result<(), WindowingError> {
         let debug_for_handler = debug;
         let settings_for_handler = settings;
 
-        app.plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |handle, shortcut, event| {
-                    if event.state != ShortcutState::Pressed {
-                        return;
-                    }
+        if app
+            .plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |handle, shortcut, event| {
+                        if event.state != ShortcutState::Pressed {
+                            return;
+                        }
 
-                    let shortcut_event = if shortcut == &toggle_for_handler {
-                        // React receives the resulting visibility rather than
-                        // guessing whether this invocation hid or showed the
-                        // window. Do not emit a state-changing event if the
-                        // native operation itself failed.
-                        toggle_main_window_visibility(handle)
-                            .ok()
-                            .map(|result| ShortcutEvent::new("toggle", result.visible))
-                    } else if shortcut == &interactive_for_handler {
-                        reveal_main_window(handle, DisplayWindowMode::Interactive)
-                            .ok()
-                            .map(|result| ShortcutEvent::new("interactive", result.visible))
-                    } else if shortcut == &debug_for_handler {
-                        reveal_main_window(handle, DisplayWindowMode::Interactive)
-                            .ok()
-                            .map(|result| ShortcutEvent::new("debug", result.visible))
-                    } else if shortcut == &settings_for_handler {
-                        reveal_main_window(handle, DisplayWindowMode::Settings)
-                            .ok()
-                            .map(|result| ShortcutEvent::new("settings", result.visible))
-                    } else {
-                        None
-                    };
+                        let shortcut_event = if shortcut == &toggle_for_handler {
+                            // React receives the resulting visibility rather than
+                            // guessing whether this invocation hid or showed the
+                            // window. Do not emit a state-changing event if the
+                            // native operation itself failed.
+                            toggle_main_window_visibility(handle)
+                                .ok()
+                                .map(|result| ShortcutEvent::new("toggle", result.visible))
+                        } else if shortcut == &interactive_for_handler {
+                            reveal_main_window(handle, DisplayWindowMode::Interactive)
+                                .ok()
+                                .map(|result| ShortcutEvent::new("interactive", result.visible))
+                        } else if shortcut == &debug_for_handler {
+                            reveal_main_window(handle, DisplayWindowMode::Interactive)
+                                .ok()
+                                .map(|result| ShortcutEvent::new("debug", result.visible))
+                        } else if shortcut == &settings_for_handler {
+                            reveal_main_window(handle, DisplayWindowMode::Settings)
+                                .ok()
+                                .map(|result| ShortcutEvent::new("settings", result.visible))
+                        } else {
+                            None
+                        };
 
-                    if let Some(shortcut_event) = shortcut_event {
-                        let _ = handle.emit(SHORTCUT_EVENT, shortcut_event);
-                    }
-                })
-                .build(),
-        )
-        .map_err(|_| native_error("Global shortcut support could not be initialized."))?;
+                        if let Some(shortcut_event) = shortcut_event {
+                            let _ = handle.emit(SHORTCUT_EVENT, shortcut_event);
+                        }
+                    })
+                    .build(),
+            )
+            .is_err()
+        {
+            log::warn!("Global shortcut support could not be initialized.");
+            return Ok(());
+        }
 
-        app.global_shortcut()
-            .register(toggle)
-            .map_err(|_| native_error("Ctrl+Shift+Space is unavailable."))?;
-        app.global_shortcut()
-            .register(interactive)
-            .map_err(|_| native_error("Ctrl+Shift+I is unavailable."))?;
-        app.global_shortcut()
-            .register(debug)
-            .map_err(|_| native_error("Ctrl+Shift+D is unavailable."))?;
-        app.global_shortcut()
-            .register(settings)
-            .map_err(|_| native_error("Ctrl+Shift+, is unavailable."))?;
+        for (label, shortcut) in [
+            ("Ctrl+Shift+Space", toggle),
+            ("Ctrl+Shift+I", interactive),
+            ("Ctrl+Shift+D", debug),
+            ("Ctrl+Shift+Comma", settings),
+        ] {
+            if app.global_shortcut().register(shortcut).is_err() {
+                log::warn!("Global shortcut {label} is unavailable.");
+            }
+        }
     }
 
     Ok(())
@@ -535,24 +428,6 @@ impl ShortcutEvent {
     }
 }
 
-/// Intentionally fixed payload for the global activity signal. It contains no
-/// tick, key, pointer, button, device, or process information.
-#[cfg(target_os = "windows")]
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct InputActivityEvent {
-    source: &'static str,
-}
-
-#[cfg(target_os = "windows")]
-impl InputActivityEvent {
-    const fn windows_session() -> Self {
-        Self {
-            source: "windowsSession",
-        }
-    }
-}
-
 fn toggle_main_window_visibility(app: &AppHandle) -> Result<WindowCommandResult, WindowingError> {
     let window = main_window(app)?;
     let window_state = app.state::<DisplayWindowState>();
@@ -562,16 +437,16 @@ fn toggle_main_window_visibility(app: &AppHandle) -> Result<WindowCommandResult,
     let mut state = window_state.lock()?;
     let visible = window
         .is_visible()
-        .map_err(|_| native_error("The overlay visibility could not be checked."))?;
+        .map_err(|_| native_error("The app window visibility could not be checked."))?;
 
     if visible {
         window
             .hide()
-            .map_err(|_| native_error("The overlay could not be hidden."))?;
+            .map_err(|_| native_error("The app window could not be hidden."))?;
     } else {
         window
             .show()
-            .map_err(|_| native_error("The overlay could not be shown."))?;
+            .map_err(|_| native_error("The app window could not be shown."))?;
     }
 
     state.ready = true;
@@ -603,7 +478,7 @@ fn reveal_main_window(
     let window = main_window(app)?;
     window
         .show()
-        .map_err(|_| native_error("The overlay could not be shown."))?;
+        .map_err(|_| native_error("The app window could not be shown."))?;
     app.state::<DisplayWindowState>()
         .note_shortcut_visibility(true)
 }
@@ -647,11 +522,13 @@ fn restore_window_after_monitor_failure(
 
 fn apply_mode(window: &WebviewWindow, mode: DisplayWindowMode) -> Result<(), WindowingError> {
     window
-        .set_always_on_top(true)
-        .map_err(|_| native_error("The overlay could not stay above the desktop."))?;
+        .set_always_on_top(false)
+        .map_err(|_| native_error("The app window could not leave always-on-top mode."))?;
     window
-        .set_ignore_cursor_events(mode.click_through())
-        .map_err(|_| native_error("The overlay could not update pointer behavior."))
+        .set_ignore_cursor_events(false)
+        .map_err(|_| native_error("The app window could not receive pointer input."))?;
+    let _ = mode;
+    Ok(())
 }
 
 fn as_result(snapshot: WindowStateSnapshot) -> WindowCommandResult {
