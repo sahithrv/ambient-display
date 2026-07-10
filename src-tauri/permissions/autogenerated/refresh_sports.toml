@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-refresh-sports"
+description = "Enables the refresh_sports command without any pre-configured scope."
+commands.allow = ["refresh_sports"]
+
+[[permission]]
+identifier = "deny-refresh-sports"
+description = "Denies the refresh_sports command without any pre-configured scope."
+commands.deny = ["refresh_sports"]

@@ -1,0 +1,27 @@
+:root {
+  --ag-font:
+    "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --ag-ink: #f2f6ff;
+  --ag-ink-muted: rgba(224, 234, 255, 0.72);
+  --ag-ink-faint: rgba(212, 224, 249, 0.52);
+  --ag-blue: #84b4ff;
+  --ag-blue-bright: #b8d3ff;
+  --ag-violet: #8499ff;
+  --ag-shadow: rgba(0, 0, 0, 0.42);
+  --ag-safe: clamp(42px, 5.1vmin, 74px);
+  --ag-ease-liquid: cubic-bezier(0.16, 1, 0.3, 1);
+  --ag-ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ag-ease-in: cubic-bezier(0.64, 0, 0.78, 0);
+  --glass-fill-dark: rgba(8, 14, 29, 0.52);
+  --glass-fill-light: rgba(191, 211, 255, 0.14);
+  --glass-fill-base: rgba(18, 29, 53, 0.58);
+  --glass-stroke: rgba(219, 231, 255, 0.36);
+  --glass-stroke-soft: rgba(213, 228, 255, 0.12);
+  --glass-highlight: rgba(239, 247, 255, 0.82);
+  --glass-shadow: rgba(0, 0, 0, 0.34);
+  --glass-radius-lg: 40px;
+  --glass-radius-md: 28px;
+  --glass-radius-pill: 999px;
+  --glass-blur-progressive: 18px;
+}

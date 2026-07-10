@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-display-window-state"
+description = "Enables the get_display_window_state command without any pre-configured scope."
+commands.allow = ["get_display_window_state"]
+
+[[permission]]
+identifier = "deny-get-display-window-state"
+description = "Denies the get_display_window_state command without any pre-configured scope."
+commands.deny = ["get_display_window_state"]

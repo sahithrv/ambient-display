@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-display-window-mode"
+description = "Enables the set_display_window_mode command without any pre-configured scope."
+commands.allow = ["set_display_window_mode"]
+
+[[permission]]
+identifier = "deny-set-display-window-mode"
+description = "Denies the set_display_window_mode command without any pre-configured scope."
+commands.deny = ["set_display_window_mode"]

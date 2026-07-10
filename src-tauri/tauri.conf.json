@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Ambient Glass",
+  "version": "0.1.0",
+  "identifier": "io.ambientglass.display",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:4173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Ambient Glass",
+        "width": 1920,
+        "height": 1200,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": false,
+        "fullscreen": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:4173 ws://localhost:4173 https://api.open-meteo.com https://api.github.com https://www.thesportsdb.com; img-src 'self' asset: data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' asset:; script-src 'self';"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-test-wallpaper-scene"
+description = "Enables the test_wallpaper_scene command without any pre-configured scope."
+commands.allow = ["test_wallpaper_scene"]
+
+[[permission]]
+identifier = "deny-test-wallpaper-scene"
+description = "Denies the test_wallpaper_scene command without any pre-configured scope."
+commands.deny = ["test_wallpaper_scene"]

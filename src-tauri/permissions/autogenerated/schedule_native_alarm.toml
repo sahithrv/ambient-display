@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-schedule-native-alarm"
+description = "Enables the schedule_native_alarm command without any pre-configured scope."
+commands.allow = ["schedule_native_alarm"]
+
+[[permission]]
+identifier = "deny-schedule-native-alarm"
+description = "Denies the schedule_native_alarm command without any pre-configured scope."
+commands.deny = ["schedule_native_alarm"]

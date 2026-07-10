@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-create-google-calendar-event"
+description = "Enables the create_google_calendar_event command without any pre-configured scope."
+commands.allow = ["create_google_calendar_event"]
+
+[[permission]]
+identifier = "deny-create-google-calendar-event"
+description = "Denies the create_google_calendar_event command without any pre-configured scope."
+commands.deny = ["create_google_calendar_event"]

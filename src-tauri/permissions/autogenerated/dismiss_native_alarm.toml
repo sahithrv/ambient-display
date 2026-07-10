@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dismiss-native-alarm"
+description = "Enables the dismiss_native_alarm command without any pre-configured scope."
+commands.allow = ["dismiss_native_alarm"]
+
+[[permission]]
+identifier = "deny-dismiss-native-alarm"
+description = "Denies the dismiss_native_alarm command without any pre-configured scope."
+commands.deny = ["dismiss_native_alarm"]

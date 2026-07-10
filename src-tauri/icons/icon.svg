@@ -1,0 +1,42 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  fill="none"
+>
+  <defs>
+    <linearGradient id="surface" x1="112" y1="82" x2="912" y2="956" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#20293B"/>
+      <stop offset="0.5" stop-color="#111827"/>
+      <stop offset="1" stop-color="#080D18"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="262" y1="197" x2="776" y2="824" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDEBFF" stop-opacity="0.94"/>
+      <stop offset="0.35" stop-color="#8AB4FF" stop-opacity="0.74"/>
+      <stop offset="1" stop-color="#6F83E8" stop-opacity="0.35"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(514 476) rotate(90) scale(386)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#BED4FF" stop-opacity="0.5"/>
+      <stop offset="0.46" stop-color="#8FB5FF" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#6E83F0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="65" y="65" width="894" height="894" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#030711" flood-opacity="0.62"/>
+    </filter>
+    <filter id="softGlow" x="168" y="158" width="688" height="710" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect x="80" y="80" width="864" height="864" rx="224" fill="url(#surface)" filter="url(#shadow)"/>
+  <rect x="80.5" y="80.5" width="863" height="863" rx="223.5" stroke="#DDE9FF" stroke-opacity="0.28"/>
+  <path d="M161 581C202 363 331 207 538 209C739 211 864 348 875 487C886 626 736 802 508 814C321 824 126 765 161 581Z" fill="url(#glow)"/>
+  <path d="M198 598C211 398 350 249 532 248C704 247 836 363 839 506C843 656 691 766 505 776C342 785 179 732 198 598Z" stroke="url(#glass)" stroke-width="4" stroke-opacity="0.9"/>
+  <path d="M260 628C270 461 375 344 518 341C655 338 757 427 757 538C757 653 644 723 501 727C377 731 247 697 260 628Z" stroke="#D4E4FF" stroke-opacity="0.26" stroke-width="3"/>
+  <path d="M510 245L546 419L686 510L546 601L510 775L474 601L334 510L474 419L510 245Z" fill="#D8E7FF" filter="url(#softGlow)" opacity="0.62"/>
+  <path d="M510 232L542 409L688 510L542 611L510 788L478 611L332 510L478 409L510 232Z" fill="url(#glass)"/>
+  <path d="M510 361L528 458L610 510L528 562L510 659L492 562L410 510L492 458L510 361Z" fill="#F7FBFF"/>
+  <circle cx="720" cy="314" r="11" fill="#D9E8FF" opacity="0.85"/>
+  <circle cx="278" cy="674" r="7" fill="#C5DAFF" opacity="0.82"/>
+  <circle cx="738" cy="687" r="6" fill="#C5DAFF" opacity="0.62"/>
+</svg>

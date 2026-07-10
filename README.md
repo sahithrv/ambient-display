@@ -1,1 +1,156 @@
-This is a small passion project which I think will be cool - especially if you have extra devices that you do not use much!
+# Ambient Glass
+
+Ambient Glass turns a spare Windows laptop into a quiet, cinematic information display. It is a Tauri 2 + React + TypeScript overlay designed around a restrained Liquid Glass composition: the wallpaper remains the artwork; time, weather, reminders, tasks, scores, and alarms surface only when useful.
+
+The supplied visual source of truth is [design/reference/glance.png](design/reference/glance.png). The behavioral product plan is [PLAN.md](PLAN.md).
+
+## What is implemented
+
+- A polished, responsive 16:10 Liquid Glass preview matching the reference composition rather than a dashboard grid.
+- A centralized display state machine: `booting`, `sleep`, `ambient`, `awakening`, `glance`, `interactive`, `alarm`, `celebration`, and `settings`.
+- Deterministic preview controls through URL parameters and a shortcut-gated debug surface.
+- Local-first repeating tasks, weekday routines, date-based completion, local reminders, one-per-day celebration logic, native app-active alarm scheduling with a browser-audio fallback, and a morning-briefing transition.
+- Open-Meteo weather with local cache support, WMO normalization, sunrise/sunset day parts, scene hysteresis, and graceful fallback.
+- Local MediaPipe face-detection pipeline with persisted opt-in camera permission, hidden low-resolution stream, one-second sampling, no frame storage or upload.
+- Typed commands and explicit push-to-talk capture. Typed commands always work without credentials.
+- Credential-backed native GitHub, TheSportsDB, optional OpenAI transcription, and optional Google Calendar boundaries. Google uses installed-app PKCE OAuth in the system browser, keeps refresh tokens in the OS credential store, and normalizes only today's display-safe events.
+- A narrow native Wallpaper Engine adapter that validates scene keys, playlist labels, monitor input, and executable layout before invoking only the fixed `openPlaylist` command; settings persist every playlist mapping, manual scene lock, fallback choice, Wallpaper Engine monitor, and overlay-monitor selection.
+- Tauri settings persistence, autostart, app-active native alarms, native notification, secure credentials, and Windows source configuration. These native behaviors require the Windows validation pass below.
+
+## Run it
+
+Prerequisites:
+
+- Node.js 22+ (this workspace was verified with Node 26).
+- Rust/Cargo plus the current [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for desktop builds.
+- For Windows deployment: WebView2, Wallpaper Engine, and the Dell XPS itself for runtime validation.
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://localhost:4173/?preview=1` for the deterministic browser preview.
+
+Useful preview routes:
+
+```text
+/?preview=1&time=07:30&weather=clear&presence=1
+/?preview=1&time=22:15&weather=rain&presence=1
+/?preview=1&mode=ambient&presence=0
+/?preview=1&mode=alarm
+/?preview=1&mode=celebration
+/?preview=1&mode=settings
+/?preview=1&offline=1
+```
+
+Keyboard shortcuts:
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+Shift+Space` | Wake or emergency-hide the overlay |
+| `Ctrl+Shift+I` | Enter interactive mode |
+| `Ctrl+Shift+D` | Toggle debug controls |
+| `Ctrl+Shift+,` | Open settings |
+| `Esc` | Exit settings/interactive mode |
+
+## Verify
+
+```bash
+npm run verify
+```
+
+This runs Prettier, ESLint, TypeScript, unit tests, the production frontend build, and deterministic Playwright preview flows. Captures are written to [`artifacts/screenshots/`](artifacts/screenshots/), including clear/rainy glance, ambient, mid-reveal, alarm, celebration, settings, offline, and interactive-command states.
+
+For the native shell after Rust is installed:
+
+```bash
+npm run tauri dev
+npm run tauri build
+```
+
+## Daily-use setup
+
+### Wallpaper Engine
+
+Create these playlists in Wallpaper Engine (or adapt them in settings):
+
+```text
+AG Clear Dawn
+AG Clear Day
+AG Clear Sunset
+AG Clear Night
+AG Cloudy Day
+AG Cloudy Night
+AG Rain Day
+AG Rain Night
+AG Storm
+AG Fog
+AG Snow
+AG Fallback
+```
+
+The native adapter maps those values to scene keys and sends only the validated equivalent of:
+
+```powershell
+wallpaper64.exe -control openPlaylist -playlist "AG Rain Night" -monitor 0
+```
+
+It never exposes arbitrary shell execution to the webview. On non-Windows hosts it intentionally returns a mock result.
+
+### Weather and presence
+
+Open settings, choose **Use current location**, then allow the browser/webview location prompt. Weather refreshes conservatively and uses its cache on failure. Camera access is never requested until you explicitly choose **Enable local camera presence**. That local opt-in is persisted in browser storage or Tauri Store, so later non-preview launches start the same local pipeline automatically; choose **Disable** to stop and release it immediately. The bundled MediaPipe model runs locally; frames are neither saved nor transmitted. If camera permission is denied or unavailable, browser input can wake the preview. On Windows, the visible click-through overlay also treats a changed session last-input tick as a privacy-preserving activity signal while Ambient Glass is active; it sends no key, pointer, button, device, timestamp, or process data to the webview. `Ctrl+Shift+Space` remains the cross-platform recovery shortcut.
+
+### Providers and secrets
+
+Use the native settings surface to connect GitHub, TheSportsDB, and optional OpenAI transcription. Tokens are never placed in `VITE_*` variables, source, screenshots, or logs. Browser preview has no access to these provider paths and therefore uses deterministic mocks by design; a normal launch starts with no fabricated tasks, alarms, scores, commits, or events.
+
+GitHub’s visible count is labeled **“commits today”** only when it represents `contributionsCollection.totalCommitContributions`; it is not mislabeled as all contributions. Sports are normalized before rendering, then sorted live → upcoming → final in one calm ribbon. Normalized same-day cache values remain visibly stale after a disconnect instead of becoming demo data. The local calendar/reminder layer remains usable when Google Calendar is disconnected.
+
+### Google Calendar (optional)
+
+Create a **Desktop app** OAuth client in your Google Cloud project, configure the consent screen for your account, then provide its public client ID only when building/running the native shell:
+
+```bash
+AMBIENT_GOOGLE_CLIENT_ID="your-desktop-client-id.apps.googleusercontent.com" npm run tauri dev
+```
+
+In native settings, choose **Connect Google Calendar**. Ambient Glass opens the authorization page in the system browser and receives the approved loopback callback with PKCE; the webview never receives an OAuth code, verifier, access token, or refresh token. The refresh token stays in the operating-system credential store. Today’s primary-calendar events appear alongside local reminders, and the settings form can create a bounded event in that same calendar. A missing client ID or revoked consent leaves the local-first calendar fully usable.
+
+### Alarms and startup
+
+Alarms work while Ambient Glass and the computer remain running. In a native build, a small app-active scheduler persists non-secret schedules/snoozes and emits the alarm event; the display loops its bundled local [`alarm-default.wav`](public/audio/alarm-default.wav) chime until snooze or dismiss, falling back to a dependency-free WebAudio chime if media playback is unavailable. It queues simultaneous alarms deterministically and sends a native notification when permission is granted. Enable native notification permission and autostart from settings in a desktop build. The scheduler does not wake a sleeping computer, and the sound is still played by the active webview rather than an independent native audio service, so leave the laptop powered and awake until a Windows Task Scheduler/audio enhancement is added and tested.
+
+## Windows/Dell validation still required
+
+This repository was browser-verified and native-source-checked on macOS. The full native GUI/package could not run here because full Xcode is unavailable, and Windows, Wallpaper Engine, and the Dell hardware are outside this host. Do not treat source or browser evidence as proof of desktop behavior. Perform and record these checks on the Dell:
+
+1. Transparent borderless fullscreen overlay, hidden startup flash, no taskbar entry, click-through, and emergency hide shortcut.
+2. Each Wallpaper Engine playlist test plus clear/rain/day/night automatic switching.
+3. Webcam permission, local presence reveal/dismiss, Windows session-input wake while click-through is active, `Ctrl+Shift+Space` recovery, and long-absence sleep.
+4. Local task persistence, celebration, reminder, alarm, notification, and morning briefing.
+5. Each configured provider independently, including secure token storage and revoked/disconnected behavior. Build with a configured Google Desktop client ID, complete the system-browser OAuth flow, verify today-sync/event creation, then revoke access and verify the local-first fallback.
+6. Startup after a Windows restart, plus a 20-minute CPU/GPU/fan observation with Wallpaper Engine running.
+7. Offline fallback with network disconnected.
+
+The exact current evidence and limits live in [artifacts/verification/p0-checklist.md](artifacts/verification/p0-checklist.md) and [PROGRESS.md](PROGRESS.md).
+
+## Security notes
+
+- No unrestricted shell, filesystem, process, or opener permissions are granted to the frontend. The sole opener permission is native-only and restricted to Google’s authorization host for Calendar OAuth.
+- Wallpaper Engine input is validated twice and invoked through separated process arguments.
+- Camera frames stay local and ephemeral.
+- The Windows click-through fallback emits only an activity event—not raw keyboard, mouse, device, tick, timestamp, or process data—and runs only while the visible Ambient Glass overlay is active.
+- Microphone capture happens only while the user explicitly holds the voice control; temporary audio is discarded after the native transcription request.
+- Non-secret app state uses browser fallback storage during preview and Tauri Store in a native build. Secrets belong in the native credential boundary, never frontend bundles.
+
+## Project layout
+
+```text
+src/             React UI, state integration, providers, and deterministic preview
+src/domain/      Pure state machine, weather, tasks, alarms, commands, and tests
+src-tauri/       Minimal native Tauri/Wallpaper Engine/security surface
+tests/e2e/       Playwright deterministic preview flows
+artifacts/       Screenshots and verification evidence
+```

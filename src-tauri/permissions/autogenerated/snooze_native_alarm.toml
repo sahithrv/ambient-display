@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-snooze-native-alarm"
+description = "Enables the snooze_native_alarm command without any pre-configured scope."
+commands.allow = ["snooze_native_alarm"]
+
+[[permission]]
+identifier = "deny-snooze-native-alarm"
+description = "Denies the snooze_native_alarm command without any pre-configured scope."
+commands.deny = ["snooze_native_alarm"]

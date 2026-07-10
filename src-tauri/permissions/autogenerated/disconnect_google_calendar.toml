@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-disconnect-google-calendar"
+description = "Enables the disconnect_google_calendar command without any pre-configured scope."
+commands.allow = ["disconnect_google_calendar"]
+
+[[permission]]
+identifier = "deny-disconnect-google-calendar"
+description = "Denies the disconnect_google_calendar command without any pre-configured scope."
+commands.deny = ["disconnect_google_calendar"]

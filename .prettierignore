@@ -1,0 +1,11 @@
+node_modules
+dist
+artifacts
+package-lock.json
+src-tauri/target
+PLAN.md
+ambient-glass-PLAN.md
+README.md
+design/reference/
+public/mediapipe/
+public/models/
