@@ -4,12 +4,10 @@
   isolation: isolate;
   color: var(--ag-ink);
   overflow: hidden;
-  border: 1px solid rgba(222, 236, 255, 0.2);
+  border: 1px solid rgba(222, 236, 255, 0.16);
   box-shadow:
-    0 22px 54px -25px var(--glass-shadow),
-    0 8px 21px -15px rgba(0, 0, 0, 0.78),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    inset 0 -1px 0 rgba(102, 150, 224, 0.11);
+    0 24px 60px -34px rgba(0, 0, 0, 0.88),
+    inset 0 1px 0 rgba(255, 255, 255, 0.17);
   transform: translateZ(0);
 }
 
@@ -39,16 +37,10 @@
 .glass-island__body,
 .glass-capsule__body {
   background:
-    radial-gradient(circle at 82% -26%, rgba(192, 220, 255, 0.29), transparent 42%),
-    radial-gradient(circle at 3% 110%, rgba(107, 151, 236, 0.19), transparent 49%),
-    linear-gradient(
-      132deg,
-      rgba(77, 98, 135, 0.34),
-      rgba(17, 26, 44, 0.55) 46%,
-      rgba(25, 36, 60, 0.38)
-    );
-  -webkit-backdrop-filter: blur(var(--glass-blur-progressive)) saturate(132%);
-  backdrop-filter: blur(var(--glass-blur-progressive)) saturate(132%);
+    radial-gradient(circle at 18% 0%, rgba(218, 232, 255, 0.1), transparent 42%),
+    linear-gradient(135deg, rgba(38, 50, 72, 0.54), rgba(11, 19, 34, 0.69));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* A softly refracted light field makes the material read as a surface instead
@@ -62,30 +54,15 @@
   pointer-events: none;
   border-radius: inherit;
   inset: 1px;
-  opacity: 0.48;
+  opacity: 0.44;
   background:
-    radial-gradient(ellipse 68% 30% at 50% 0%, rgba(234, 246, 255, 0.16), transparent 74%),
-    radial-gradient(circle at 88% 22%, rgba(164, 204, 255, 0.12), transparent 22%),
-    linear-gradient(
-      116deg,
-      rgba(255, 255, 255, 0.07),
-      transparent 23%,
-      transparent 72%,
-      rgba(131, 182, 255, 0.08)
-    );
-  mix-blend-mode: screen;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09), transparent 31%),
+    linear-gradient(112deg, rgba(255, 255, 255, 0.04), transparent 42%);
 }
 
 .glass-island::after,
 .glass-capsule::after {
-  position: absolute;
-  z-index: 1;
-  content: "";
-  pointer-events: none;
-  border: 1px solid rgba(237, 247, 255, 0.12);
-  border-radius: inherit;
-  box-shadow: inset 0 0 18px rgba(178, 209, 255, 0.04);
-  inset: 5px;
+  display: none;
 }
 
 .glass-island__edge,
@@ -106,7 +83,7 @@
     linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  opacity: 0.83;
+  opacity: 0.48;
 }
 
 .glass-island__reflection,
@@ -123,7 +100,7 @@
       rgba(255, 255, 255, 0.14)
     ),
     linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 80%);
-  opacity: 0.57;
+  opacity: 0.2;
   -webkit-mask-image: linear-gradient(
     to bottom,
     #000 0%,
@@ -135,8 +112,7 @@
 
 .glass-island__noise,
 .glass-capsule__noise {
-  opacity: 0.11;
-  mix-blend-mode: soft-light;
+  display: none;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.88' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
 }
 
@@ -177,17 +153,16 @@
 .glass-island--glow-blue,
 .glass-capsule--glow-blue {
   box-shadow:
-    0 21px 48px -22px rgba(0, 0, 0, 0.64),
-    0 0 20px -10px rgba(111, 166, 255, 0.88),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    0 22px 54px -30px rgba(0, 0, 0, 0.78),
+    0 0 16px -12px rgba(111, 166, 255, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.17);
 }
 
 .glass-island--glow-bright {
   box-shadow:
-    0 24px 55px -21px rgba(0, 0, 0, 0.73),
-    0 0 31px -13px rgba(139, 188, 255, 0.96),
-    0 0 4px 1px rgba(202, 228, 255, 0.43),
-    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+    0 25px 58px -28px rgba(0, 0, 0, 0.8),
+    0 0 18px -12px rgba(139, 188, 255, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .glass-island--muted {

@@ -19,8 +19,8 @@ export interface WallpaperEngineStatus {
   adapter: "native" | "mock";
   available: boolean;
   hasConfiguredPath: boolean;
-  monitorIndex: number;
-  playlistCount: number;
+  backgroundCount: number;
+  inAppActive: boolean;
   message: string;
 }
 
@@ -29,6 +29,7 @@ export interface WallpaperSceneResult {
   /** The native controller already has this scene, so no child was launched. */
   duplicate: boolean;
   mocked: boolean;
+  inApp: boolean;
   message: string;
 }
 
@@ -129,6 +130,7 @@ export async function applyWallpaperScene(
     applied: false,
     duplicate: false,
     mocked: false,
+    inApp: false,
     message: isTauriRuntime()
       ? result.message
       : "Preview mock: Wallpaper Engine control is available on Windows only.",
@@ -152,6 +154,10 @@ export async function configureWallpaperEngine(
 
 export async function testWallpaperScene(scene: string): Promise<WallpaperSceneResult> {
   return applyWallpaperScene(scene, true);
+}
+
+export async function closeInAppWallpaper(): Promise<void> {
+  await invokeTauri("close_in_app_wallpaper");
 }
 
 /** Reads only platform display labels and dimensions for the settings picker. */

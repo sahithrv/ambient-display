@@ -25,12 +25,13 @@ export function FocusTasks({
 }: FocusTasksProps) {
   const complete = tasks.filter((task) => task.completed).length;
   const progress = progressLabel ?? `${complete}/${tasks.length}`;
+  const empty = tasks.length === 0;
 
   return (
     <GlassIsland
       {...props}
-      className={`focus-card ${interactive ? "focus-card--interactive" : ""} ${className}`}
-      glow="blue"
+      className={`focus-card${empty ? " focus-card--empty" : ""} ${interactive ? "focus-card--interactive" : ""} ${className}`}
+      glow="none"
       aria-label={`${title}: ${progress} complete`}
     >
       <header className="focus-card__header">
@@ -38,23 +39,25 @@ export function FocusTasks({
           <Icon name="calendar" size={19} />
           <span>{title}</span>
         </div>
-        <span
-          className="focus-card__progress"
-          aria-label={`${complete} of ${tasks.length} complete`}
-        >
-          <svg viewBox="0 0 40 40" aria-hidden="true">
-            <circle className="focus-card__progress-track" cx="20" cy="20" r="17" />
-            <circle
-              className="focus-card__progress-value"
-              cx="20"
-              cy="20"
-              r="17"
-              pathLength="100"
-              strokeDasharray={`${tasks.length ? (complete / tasks.length) * 100 : 0} 100`}
-            />
-          </svg>
-          <b>{progress}</b>
-        </span>
+        {!empty ? (
+          <span
+            className="focus-card__progress"
+            aria-label={`${complete} of ${tasks.length} complete`}
+          >
+            <svg viewBox="0 0 40 40" aria-hidden="true">
+              <circle className="focus-card__progress-track" cx="20" cy="20" r="17" />
+              <circle
+                className="focus-card__progress-value"
+                cx="20"
+                cy="20"
+                r="17"
+                pathLength="100"
+                strokeDasharray={`${(complete / tasks.length) * 100} 100`}
+              />
+            </svg>
+            <b>{progress}</b>
+          </span>
+        ) : null}
       </header>
       <div className="focus-card__tasks">
         {tasks.length > 0 ? (
@@ -85,12 +88,12 @@ export function FocusTasks({
           })
         ) : (
           <div className="focus-card__empty">
-            <strong>No focus tasks yet</strong>
-            <span>Add one from settings or type “add … to my tasks”.</span>
+            <strong>Nothing planned yet</strong>
+            <span>Add a focus item in Settings.</span>
           </div>
         )}
       </div>
-      {encouragement ? (
+      {!empty && encouragement ? (
         <p className="focus-card__encouragement">
           <Icon name="spark" size={16} />
           {encouragement}

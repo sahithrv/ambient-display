@@ -21,21 +21,6 @@ export const WALLPAPER_SCENE_KEYS = [
   "fallback.any",
 ] as const satisfies readonly SceneKey[];
 
-export const DEFAULT_WALLPAPER_PLAYLISTS: Record<SceneKey, string> = {
-  "clear.dawn": "AG Clear Dawn",
-  "clear.day": "AG Clear Day",
-  "clear.sunset": "AG Clear Sunset",
-  "clear.night": "AG Clear Night",
-  "cloudy.day": "AG Cloudy Day",
-  "cloudy.night": "AG Cloudy Night",
-  "rain.day": "AG Rain Day",
-  "rain.night": "AG Rain Night",
-  "storm.any": "AG Storm",
-  "fog.any": "AG Fog",
-  "snow.any": "AG Snow",
-  "fallback.any": "AG Fallback",
-};
-
 export interface WallpaperSettingsValidation {
   valid: boolean;
   message?: string;
@@ -43,10 +28,9 @@ export interface WallpaperSettingsValidation {
 
 export function createDefaultWallpaperSettings(): WallpaperSettings {
   return {
-    version: 1,
-    monitorIndex: 0,
+    version: 2,
     overlayMonitorIndex: 0,
-    playlists: { ...DEFAULT_WALLPAPER_PLAYLISTS },
+    wallpaperFiles: {},
     sceneLock: { mode: "automatic" },
     fallbackMode: "automatic",
   };
@@ -61,24 +45,24 @@ export function normalizeWallpaperSettings(value: unknown): WallpaperSettings {
   }
 
   const executablePath = stringValue(record.executablePath);
-  const monitorIndex = integerInRange(record.monitorIndex, 0, 15) ?? defaults.monitorIndex;
   const overlayMonitorIndex =
     integerInRange(record.overlayMonitorIndex, 0, 15) ?? defaults.overlayMonitorIndex;
-  const storedPlaylists = asRecord(record.playlists);
-  const playlists = { ...defaults.playlists };
+  const wallpaperFile = stringValue(record.wallpaperFile);
+  const storedWallpaperFiles = asRecord(record.wallpaperFiles);
+  const wallpaperFiles: Partial<Record<SceneKey, string>> = {};
   for (const scene of WALLPAPER_SCENE_KEYS) {
-    const playlist = storedPlaylists ? stringValue(storedPlaylists[scene]) : undefined;
-    if (playlist && isSafePlaylistName(playlist)) {
-      playlists[scene] = playlist;
+    const file = storedWallpaperFiles ? stringValue(storedWallpaperFiles[scene]) : undefined;
+    if (file && isSafeWallpaperFile(file)) {
+      wallpaperFiles[scene] = file;
     }
   }
 
   return {
-    version: 1,
+    version: 2,
     executablePath: executablePath && isSafePathValue(executablePath) ? executablePath : undefined,
-    monitorIndex,
+    wallpaperFile: wallpaperFile && isSafeWallpaperFile(wallpaperFile) ? wallpaperFile : undefined,
     overlayMonitorIndex,
-    playlists,
+    wallpaperFiles,
     sceneLock: normalizeSceneLock(record.sceneLock),
     fallbackMode: record.fallbackMode === "force-internal" ? "force-internal" : "automatic",
   };
@@ -87,13 +71,6 @@ export function normalizeWallpaperSettings(value: unknown): WallpaperSettings {
 export function validateWallpaperSettings(
   settings: WallpaperSettings,
 ): WallpaperSettingsValidation {
-  if (
-    !Number.isInteger(settings.monitorIndex) ||
-    settings.monitorIndex < 0 ||
-    settings.monitorIndex > 15
-  ) {
-    return { valid: false, message: "Choose a Wallpaper Engine monitor from 0 through 15." };
-  }
   if (
     !Number.isInteger(settings.overlayMonitorIndex) ||
     settings.overlayMonitorIndex < 0 ||
@@ -104,12 +81,17 @@ export function validateWallpaperSettings(
   if (settings.executablePath && !isSafePathValue(settings.executablePath)) {
     return { valid: false, message: "Wallpaper Engine path is invalid." };
   }
-  for (const scene of WALLPAPER_SCENE_KEYS) {
-    const playlist = settings.playlists[scene];
-    if (!playlist || !isSafePlaylistName(playlist)) {
+  if (settings.wallpaperFile && !isSafeWallpaperFile(settings.wallpaperFile)) {
+    return {
+      valid: false,
+      message: "Choose a supported Wallpaper Engine project, scene, web, or video file.",
+    };
+  }
+  for (const [scene, file] of Object.entries(settings.wallpaperFiles)) {
+    if (!isSceneKey(scene) || !file || !isSafeWallpaperFile(file)) {
       return {
         valid: false,
-        message: `Playlist name for ${scene} must be non-empty and use safe characters.`,
+        message: `Wallpaper file for ${scene} is invalid or unsupported.`,
       };
     }
   }
@@ -166,6 +148,13 @@ export function deriveWallpaperFallback(
       active: true,
       mode: settings.fallbackMode,
       reason: "Internal fallback selected in settings.",
+    };
+  }
+  if (!settings.wallpaperFile && Object.keys(settings.wallpaperFiles).length === 0) {
+    return {
+      active: true,
+      mode: settings.fallbackMode,
+      reason: "Choose an in-app Wallpaper Engine file in settings.",
     };
   }
   if (nativeRuntime && native && !native.available) {
@@ -234,13 +223,20 @@ function isSafePathValue(value: string): boolean {
   return value === value.trim() && value.length <= 1_024 && !hasControlCharacter(value);
 }
 
-function isSafePlaylistName(value: string): boolean {
+function isSafeWallpaperFile(value: string): boolean {
+  if (value !== value.trim() || value.length === 0 || value.length > 1_024) {
+    return false;
+  }
+  if (hasControlCharacter(value)) {
+    return false;
+  }
+  const normalized = value.toLocaleLowerCase();
   return (
-    value === value.trim() &&
-    value.length > 0 &&
-    value.length <= 96 &&
-    !hasControlCharacter(value) &&
-    !["/", "\\", '"', "'", "`"].some((character) => value.includes(character))
+    normalized.endsWith("project.json") ||
+    normalized.endsWith(".pkg") ||
+    normalized.endsWith(".mp4") ||
+    normalized.endsWith(".webm") ||
+    normalized.endsWith(".html")
   );
 }
 

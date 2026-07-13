@@ -12,6 +12,11 @@
         "description": "Enables the begin_google_calendar_oauth command without any pre-configured scope.",
         "commands": { "allow": ["begin_google_calendar_oauth"], "deny": [] }
       },
+      "allow-close-in-app-wallpaper": {
+        "identifier": "allow-close-in-app-wallpaper",
+        "description": "Enables the close_in_app_wallpaper command without any pre-configured scope.",
+        "commands": { "allow": ["close_in_app_wallpaper"], "deny": [] }
+      },
       "allow-complete-google-calendar-oauth": {
         "identifier": "allow-complete-google-calendar-oauth",
         "description": "Enables the complete_google_calendar_oauth command without any pre-configured scope.",
@@ -146,6 +151,11 @@
         "identifier": "deny-begin-google-calendar-oauth",
         "description": "Denies the begin_google_calendar_oauth command without any pre-configured scope.",
         "commands": { "allow": [], "deny": ["begin_google_calendar_oauth"] }
+      },
+      "deny-close-in-app-wallpaper": {
+        "identifier": "deny-close-in-app-wallpaper",
+        "description": "Denies the close_in_app_wallpaper command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["close_in_app_wallpaper"] }
       },
       "deny-complete-google-calendar-oauth": {
         "identifier": "deny-complete-google-calendar-oauth",

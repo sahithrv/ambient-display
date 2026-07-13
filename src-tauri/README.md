@@ -11,10 +11,16 @@ small IPC surface rather than a generic operating-system bridge.
 - Wallpaper Engine calls use `std::process::Command` with fixed argument
   positions; no command string is assembled and no shell is invoked.
 - The frontend requests an allowlisted `SceneKey`, never an executable, CLI
-  flags, or raw playlist at the moment a scene is applied.
-- Configuration accepts only the known scene keys, safe playlist labels, a
-  bounded monitor index, and a `wallpaper64.exe` path in the normal Steam
-  `steamapps/common/wallpaper_engine` layout.
+  flags, or raw wallpaper path at the moment a scene is applied.
+- Configuration accepts only the known scene keys, validated wallpaper files,
+  and a `wallpaper64.exe` path in the normal Steam
+  `steamapps/common/wallpaper_engine` layout. Supported background inputs are
+  a Wallpaper Engine `project.json` or packaged scene, a supported video, or a
+  web-wallpaper HTML entry file.
+- The adapter uses Wallpaper Engine's fixed `openWallpaper` + `playInWindow`
+  flow. It never issues `openPlaylist` or a desktop/monitor-targeting command.
+  Wallpaper Engine playlists cannot be passed to `playInWindow`, so playlist
+  labels are not valid configuration values.
 - On macOS and Linux, the adapter replies with explicit deterministic mock
   results and does not spawn a process.
 
@@ -34,6 +40,7 @@ get_wallpaper_engine_status()
 configure_wallpaper_engine({ settings })
 apply_wallpaper_scene({ scene })
 test_wallpaper_scene({ scene })
+close_in_app_wallpaper()
 get_github_commits({ localDay? })
 refresh_sports()
 transcribe_audio({ mimeType, durationMs, explicitPushToTalk, audio })
@@ -59,16 +66,24 @@ non-secret settings in the frontend's Tauri Store and resend the validated
 snapshot after startup.
 
 The frontend `WallpaperSetup` surface persists the complete non-secret
-snapshot (`executablePath`, `monitorIndex`, every allowlisted scene playlist,
-manual scene lock, fallback preference, and `overlayMonitorIndex`) before
-invoking this command. Its `monitorIndex` is passed only to Wallpaper Engine's
-`-monitor` argument. `set_display_monitor` separately validates a current
-platform monitor index and centers the regular app window there. Each
-per-scene **Test**
+snapshot (`executablePath`, the default `wallpaperFile`, optional allowlisted
+scene file overrides, manual scene lock, fallback preference, and
+`overlayMonitorIndex`) before invoking this command. `set_display_monitor`
+separately validates a current platform monitor index and centers the regular
+app window there; that app-window choice is never passed to Wallpaper Engine
+as a desktop wallpaper monitor. Each per-scene **Test**
 action first applies the validated snapshot and then invokes
 `test_wallpaper_scene`, which deliberately bypasses duplicate suppression.
+The native adapter opens the selected file in the named
+`Ambient Glass Background` render surface, sizes and positions that surface to
+the app's client area, keeps it visually behind the Tauri window, and
+synchronizes it when the app moves, resizes, hides, or returns.
+`close_in_app_wallpaper` closes that named surface. It does not change the
+user's Windows desktop wallpaper.
 When Wallpaper Engine reports unavailable, the frontend receives a render-safe
 fallback signal without exposing executable paths or native error details.
+The browser preview always uses the internal fallback background and works
+without provider credentials or Windows-only APIs.
 
 The GitHub, sports, and transcription commands are backend-only boundaries.
 They accept no API key or OAuth token as invocation arguments: fixed-slot
@@ -148,6 +163,8 @@ local chime and retains a WebAudio fallback.
 ## Windows validation still required
 
 The configuration targets a resizable taskbar window with normal title-bar
-controls. Native global shortcuts and `wallpaper64.exe` control must still be
-smoke-tested on the Dell XPS running Windows and Wallpaper Engine.
+controls. Native global shortcuts and the Wallpaper Engine in-app background
+surface must still be smoke-tested on the Dell XPS running Windows and
+Wallpaper Engine, including move/resize/minimize/restore, focus, close, and
+confirmation that the desktop wallpaper is unchanged.
 Non-Windows mock responses are intentionally not proof of native behavior.

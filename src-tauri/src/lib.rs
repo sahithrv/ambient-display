@@ -51,6 +51,7 @@ pub fn run() {
             commands::wallpaper::configure_wallpaper_engine,
             commands::wallpaper::apply_wallpaper_scene,
             commands::wallpaper::test_wallpaper_scene,
+            commands::wallpaper::close_in_app_wallpaper,
             commands::providers::get_github_commits,
             commands::providers::refresh_sports,
             commands::providers::transcribe_audio,
@@ -78,10 +79,28 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Ambient Glass");
 
-    app.run(|app_handle, event| {
-        if matches!(event, tauri::RunEvent::Exit) {
+    app.run(|app_handle, event| match event {
+        tauri::RunEvent::WindowEvent { label, event, .. }
+            if label == "main"
+                && matches!(
+                    event,
+                    tauri::WindowEvent::Moved(_)
+                        | tauri::WindowEvent::Resized(_)
+                        | tauri::WindowEvent::ScaleFactorChanged { .. }
+                        | tauri::WindowEvent::Focused(_)
+                ) =>
+        {
+            app_handle
+                .state::<wallpaper::WallpaperEngineController>()
+                .sync_with_app(app_handle);
+        }
+        tauri::RunEvent::Exit => {
+            let _ = app_handle
+                .state::<wallpaper::WallpaperEngineController>()
+                .close_in_app();
             alarms::stop_native_alarm_scheduler(app_handle);
             app_handle.state::<windowing::InputActivityMonitor>().stop();
         }
+        _ => {}
     });
 }

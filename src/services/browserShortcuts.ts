@@ -58,9 +58,13 @@ function browserShortcutActionForEvent(event: KeyboardEvent): NativeShortcutActi
   if (!event.ctrlKey || !event.shiftKey) {
     return undefined;
   }
+  // `key` is normally a single space, but browser automation, older engines,
+  // and some keyboard layouts may report `Spacebar`. `code` is the stable
+  // physical-key signal for this recovery shortcut.
+  if (event.code === "Space" || event.key === " " || event.key === "Spacebar") {
+    return "toggle";
+  }
   switch (event.key.toLowerCase()) {
-    case " ":
-      return "toggle";
     case "i":
       return "interactive";
     case "d":

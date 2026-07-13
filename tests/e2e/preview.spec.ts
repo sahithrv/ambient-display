@@ -93,7 +93,7 @@ test("alarm, celebration, settings, and offline fallback render without layout f
 
   await page.goto(preview("mode=settings"));
   await expect(page.getByRole("dialog", { name: "Display settings" })).toBeVisible();
-  await expect(page.getByText("Wallpaper Engine setup", { exact: true })).toBeVisible();
+  await expect(page.getByText("In-app wallpaper", { exact: true })).toBeVisible();
   await expect(page.getByText("Google Calendar", { exact: true })).toBeVisible();
   await expect(
     page.getByText(
@@ -167,21 +167,24 @@ test("typed commands update local-first data and keyboard shortcut recovers the 
   await capture(page, "interactive-commands-1440x900", 1440, 900);
 
   await page.goto(preview("mode=ambient&presence=0"));
-  await page.keyboard.press("Control+Shift+Space");
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-display-mode", "ambient");
+  await page.getByRole("button", { name: "Wake display" }).press("Control+Shift+Space");
   await expect(page.locator(".hero")).toBeVisible();
   await page.waitForTimeout(950);
   await expect(page.getByRole("heading", { name: "Good evening, Sahith" })).toBeVisible();
 });
 
 test("a normal launch never presents preview fixtures as real daily data", async ({ page }) => {
+  await page.setViewportSize({ width: 1917, height: 1093 });
   await page.goto("/");
   await page.evaluate(() => window.localStorage.clear());
   await page.goto("/?mode=glance");
 
   await expect(page.getByText("Weather unavailable", { exact: true })).toBeVisible();
   await expect(page.getByText("No events today", { exact: true })).toBeVisible();
-  await expect(page.getByText("No focus tasks yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("Nothing planned yet", { exact: true })).toBeVisible();
   await expect(page.getByText("5 commits today", { exact: true })).toHaveCount(0);
   await expect(page.locator(".scores-card")).toHaveCount(0);
   await expect(page.getByText("Morning run", { exact: true })).toHaveCount(0);
+  await capture(page, "classy-sparse-dell-1917x1093", 1917, 1093);
 });

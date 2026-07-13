@@ -4,7 +4,7 @@
 
 :root {
   color: #eaf1ff;
-  background: #080d18;
+  background: transparent;
   font-family:
     "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   font-synthesis: none;
@@ -27,6 +27,7 @@ body,
 body {
   min-height: 100vh;
   overflow: hidden;
+  background: transparent;
 }
 
 button,

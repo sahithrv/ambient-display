@@ -1,4 +1,10 @@
 # Ambient Glass
+
+> **Archived draft:** this file predates the exitable-window and in-app Wallpaper
+> Engine design. Use `PLAN.md` as the behavioral source of truth. In particular,
+> do not implement the fullscreen desktop overlay or `openPlaylist -monitor`
+> behavior described below.
+
 ## Product and implementation plan
 
 **Working title:** Ambient Glass  

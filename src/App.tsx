@@ -109,6 +109,7 @@ import {
 } from "./services/nativeRuntime";
 import {
   applyWallpaperScene,
+  closeInAppWallpaper,
   getWallpaperEngineStatus,
   invokeTauri,
   isTauriRuntime,
@@ -238,6 +239,7 @@ export default function App() {
   const [nativeWallpaperStatus, setNativeWallpaperStatus] = useState<WallpaperEngineStatus | null>(
     null,
   );
+  const [wallpaperHostReady, setWallpaperHostReady] = useState(false);
   const [nativeAlarmStatus, setNativeAlarmStatus] = useState<NativeAlarmSchedulerStatus | null>(
     null,
   );
@@ -263,9 +265,11 @@ export default function App() {
   const githubProviderRef = useRef<GitHubDesktopProvider | undefined>(undefined);
   const sportsProviderRef = useRef<SportsDesktopProvider | undefined>(undefined);
   const googleCalendarProviderRef = useRef<GoogleCalendarDesktopProvider | undefined>(undefined);
+  const previewPresenceActivatedRef = useRef(PREVIEW_CONFIG.presence);
   const nativeOverlayReadyRef = useRef(false);
   const nativeWindowQueueRef = useRef(Promise.resolve());
   const nativeWindowRevisionRef = useRef(0);
+  const wallpaperHostReadyRef = useRef(false);
   const [sceneRetryNonce, setSceneRetryNonce] = useState(0);
 
   const effectiveNow = PREVIEW_CONFIG.frozenNow ?? clockNow;
@@ -343,6 +347,7 @@ export default function App() {
     const result = await getWallpaperEngineStatus();
     if (result.ok) {
       setNativeWallpaperStatus(result.value);
+      setWallpaperHostReady(result.value.inAppActive);
       setWallpaperStatus(wallpaperStatusFromNative(result.value));
       return;
     }
@@ -351,11 +356,13 @@ export default function App() {
 
   const handleNativeWallpaperStatus = useCallback((status: WallpaperEngineStatus) => {
     setNativeWallpaperStatus(status);
+    setWallpaperHostReady(status.inAppActive);
     setWallpaperStatus(wallpaperStatusFromNative(status));
   }, []);
 
   const handleWallpaperSceneTest = useCallback((_scene: SceneKey, result: WallpaperSceneResult) => {
     setSceneMessage(result.message);
+    setWallpaperHostReady(result.inApp);
     setWallpaperStatus(wallpaperStatusFromOperation(result));
   }, []);
 
@@ -612,6 +619,51 @@ export default function App() {
   }, [refreshWallpaperHealth]);
 
   useEffect(() => {
+    wallpaperHostReadyRef.current = wallpaperHostReady;
+  }, [wallpaperHostReady]);
+
+  useEffect(() => {
+    if (PREVIEW_CONFIG.preview || !isTauriRuntime() || wallpaperFallback.active) {
+      return;
+    }
+
+    let active = true;
+    const checkHost = async () => {
+      const result = await getWallpaperEngineStatus();
+      if (!active || !result.ok) {
+        return;
+      }
+      const wasReady = wallpaperHostReadyRef.current;
+      wallpaperHostReadyRef.current = result.value.inAppActive;
+      setNativeWallpaperStatus(result.value);
+      setWallpaperHostReady(result.value.inAppActive);
+      if (wasReady && !result.value.inAppActive) {
+        // Wallpaper Engine can be closed independently. Restore the internal
+        // scene immediately, then let the normal bounded scene retry path
+        // reopen the configured file without requiring an app restart.
+        sceneStateRef.current = {
+          ...sceneStateRef.current,
+          lastIssuedSceneKey: undefined,
+        };
+        attemptedSceneRef.current = undefined;
+        setWallpaperStatus({
+          state: "stale",
+          message: "The in-app wallpaper stopped. Reopening it…",
+        });
+        setSceneRetryNonce((current) => current + 1);
+      }
+    };
+
+    const interval = window.setInterval(() => void checkHost(), 10_000);
+    window.addEventListener("focus", checkHost);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", checkHost);
+    };
+  }, [wallpaperFallback.active]);
+
+  useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listenForNativeAlarms((event) => {
@@ -811,7 +863,7 @@ export default function App() {
 
   useEffect(() => {
     const recordInput = (event: Event) => {
-      if (isDisplayShortcut(event)) {
+      if (isDisplayShortcut(event) || isModifierOnlyKey(event)) {
         // The shortcut handler owns these combinations. Ignoring their generic
         // input sample prevents a local wake from racing a browser shortcut or
         // the native visibility result carried in a Tauri shortcut event.
@@ -1097,6 +1149,7 @@ export default function App() {
         attemptedSceneRef.current = undefined;
         sceneStateRef.current = markSceneIssued(sceneStateRef.current, desired);
         setWallpaperStatus(wallpaperStatusFromOperation(result));
+        setWallpaperHostReady(result.inApp);
         setSceneMessage(result.message);
         return;
       }
@@ -1141,6 +1194,13 @@ export default function App() {
     wallpaperFallback.active,
     wallpaperFallback.reason,
   ]);
+
+  useEffect(() => {
+    if (!wallpaperFallback.active || !isTauriRuntime()) {
+      return;
+    }
+    void closeInAppWallpaper();
+  }, [wallpaperFallback.active]);
 
   useEffect(() => {
     saveLocalData(localData, PREVIEW_CONFIG.preview ? "preview" : "production");
@@ -1247,9 +1307,13 @@ export default function App() {
       return;
     }
     if (previewPresence) {
+      previewPresenceActivatedRef.current = true;
       applyPresenceAction(true, Date.now() - 1_000);
       applyPresenceAction(true, Date.now());
-    } else {
+    } else if (previewPresenceActivatedRef.current) {
+      // An initially absent preview is already in its requested passive mode.
+      // Do not let that first synthetic absence race and undo a recovery
+      // shortcut pressed while React is finishing its initial mount.
       applyPresenceAction(false, Date.now());
     }
   }, [applyPresenceAction, previewPresence]);
@@ -1807,9 +1871,12 @@ export default function App() {
         contrast={
           weatherFamily === "clear" && weatherForDisplay.isDay ? "light-scene" : "dark-scene"
         }
-        // The desktop app owns a calm internal scene, so it stays a readable
-        // standalone window whether Wallpaper Engine is connected or not.
-        previewBackground
+        // Browser previews and native failures retain the calm internal scene.
+        // A confirmed Wallpaper Engine pop-out sits directly behind the
+        // transparent webview and becomes the actual app background.
+        previewBackground={
+          PREVIEW_CONFIG.preview || wallpaperFallback.active || !wallpaperHostReady
+        }
         hero={{
           time: heroTime.time,
           meridiem: heroTime.meridiem,
@@ -1867,8 +1934,8 @@ export default function App() {
           onPointerCancel: cancelVoice,
         }}
         controls={{
+          statusVisible: false,
           onWake: () => dispatchDisplay({ type: "MANUAL_WAKE" }),
-          onMusic: () => setCommandMessage("Music controls are ready for a future provider."),
           onSettings: () => dispatchDisplay({ type: "OPEN_SETTINGS" }),
         }}
         onToggleTask={canInteract ? handleTaskToggle : undefined}
@@ -2213,8 +2280,21 @@ function isDisplayShortcut(event: Event): boolean {
   if (!event.ctrlKey || !event.shiftKey) {
     return false;
   }
+  if (event.code === "Space" || event.key === " " || event.key === "Spacebar") {
+    return true;
+  }
   const key = event.key.toLowerCase();
-  return key === " " || key === "i" || key === "d" || key === ",";
+  return key === "i" || key === "d" || key === ",";
+}
+
+function isModifierOnlyKey(event: Event): boolean {
+  return (
+    event instanceof KeyboardEvent &&
+    (event.key === "Control" ||
+      event.key === "Shift" ||
+      event.key === "Alt" ||
+      event.key === "Meta")
+  );
 }
 
 function readPreviewConfig(): PreviewConfig {
@@ -2283,6 +2363,7 @@ function toWeatherDisplay(snapshot: WeatherSnapshot): WeatherDisplayData {
   const family = normalizeWmoCode(snapshot.weatherCode);
   const partlyCloudy = snapshot.weatherCode === 2;
   return {
+    available: snapshot.temperatureC !== undefined && snapshot.weatherCode !== undefined,
     temperature: snapshot.temperatureC === undefined ? "—" : Math.round(snapshot.temperatureC),
     condition:
       family === "clear"

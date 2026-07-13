@@ -41,14 +41,16 @@ export function FloatingControls({
           <Icon name="battery" size={25} />
         </GlassCapsule>
       ) : null}
-      <button
-        type="button"
-        className="floating-controls__orb floating-controls__orb--music"
-        onClick={onMusic}
-        aria-label="Music controls"
-      >
-        <Icon name="music" size={27} />
-      </button>
+      {onMusic ? (
+        <button
+          type="button"
+          className="floating-controls__orb floating-controls__orb--music"
+          onClick={onMusic}
+          aria-label="Music controls"
+        >
+          <Icon name="music" size={27} />
+        </button>
+      ) : null}
       <button
         type="button"
         className="floating-controls__orb floating-controls__orb--settings"

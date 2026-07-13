@@ -10,6 +10,7 @@
     "allow-configure-wallpaper-engine",
     "allow-apply-wallpaper-scene",
     "allow-test-wallpaper-scene",
+    "allow-close-in-app-wallpaper",
     "allow-get-github-commits",
     "allow-refresh-sports",
     "allow-transcribe-audio",

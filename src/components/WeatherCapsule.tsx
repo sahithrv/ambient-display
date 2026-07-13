@@ -115,13 +115,32 @@ export function WeatherCapsule({
   className = "",
   ...props
 }: WeatherCapsuleProps) {
+  if (weather.available === false) {
+    return (
+      <GlassIsland
+        {...props}
+        className={`weather-capsule weather-capsule--unavailable ${className}`}
+        glow="none"
+        radius="36px"
+        aria-label="Weather unavailable"
+      >
+        <span className="weather-capsule__unavailable-icon" aria-hidden="true">
+          <Icon name="cloud-moon" size={24} />
+        </span>
+        <div className="weather-capsule__unavailable-copy">
+          <strong>Weather unavailable</strong>
+          <span>Check your location in Settings</span>
+        </div>
+      </GlassIsland>
+    );
+  }
+
   return (
     <GlassIsland
       {...props}
       className={`weather-capsule ${className}`}
-      variant="organic"
-      glow="blue"
-      radius="47% 34% 46% 42% / 45% 40% 47% 48%"
+      glow="none"
+      radius="36px"
       aria-label={`Weather: ${weather.temperature} degrees, ${weather.condition}`}
     >
       <div className="weather-capsule__reading">

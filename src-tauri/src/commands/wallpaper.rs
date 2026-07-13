@@ -1,9 +1,9 @@
 //! Narrow Tauri commands for Wallpaper Engine.
 //!
 //! The webview only sends a `SceneKey` enum. It cannot select an executable,
-//! construct command-line flags, or pass arbitrary playlist text at run time.
+//! construct command-line flags, or pass an arbitrary wallpaper path at run time.
 
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::wallpaper::{
     CommandError, SceneKey, WallpaperEngineController, WallpaperEngineStatus,
@@ -29,21 +29,46 @@ pub fn configure_wallpaper_engine(
     controller.configure(settings)
 }
 
-/// Applies one allowlisted scene. Duplicate automatic requests are suppressed.
+/// Applies one allowlisted scene inside the app. Duplicate automatic requests
+/// are suppressed. Bounded pop-out discovery runs off the IPC thread.
 #[tauri::command]
-pub fn apply_wallpaper_scene(
+pub async fn apply_wallpaper_scene(
     scene: SceneKey,
-    controller: State<'_, WallpaperEngineController>,
+    app: AppHandle,
 ) -> Result<WallpaperOperationResult, CommandError> {
-    controller.apply_scene(scene, false)
+    run_apply(app, scene, false).await
 }
 
 /// Runs the same narrow operation as `apply_wallpaper_scene`, but deliberately
-/// bypasses duplicate suppression for the settings screen's per-playlist test.
+/// bypasses duplicate suppression for the settings screen's per-scene preview.
 #[tauri::command]
-pub fn test_wallpaper_scene(
+pub async fn test_wallpaper_scene(
     scene: SceneKey,
-    controller: State<'_, WallpaperEngineController>,
+    app: AppHandle,
 ) -> Result<WallpaperOperationResult, CommandError> {
-    controller.apply_scene(scene, true)
+    run_apply(app, scene, true).await
+}
+
+#[tauri::command]
+pub fn close_in_app_wallpaper(
+    controller: State<'_, WallpaperEngineController>,
+) -> Result<(), CommandError> {
+    controller.close_in_app()
+}
+
+async fn run_apply(
+    app: AppHandle,
+    scene: SceneKey,
+    force: bool,
+) -> Result<WallpaperOperationResult, CommandError> {
+    let operation_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        operation_app
+            .state::<WallpaperEngineController>()
+            .apply_scene(&operation_app, scene, force)
+    })
+    .await
+    .map_err(|_| CommandError::State {
+        message: "The in-app wallpaper operation could not complete.".to_owned(),
+    })?
 }

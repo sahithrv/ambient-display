@@ -55,7 +55,12 @@ export interface AmbientDisplayProps extends HTMLAttributes<HTMLElement> {
   alarm?: AlarmDisplayData;
   celebration?: { visible?: boolean; title?: string; message?: string };
   voice?: VoiceOrbProps;
-  controls?: { onWake?: () => void; onMusic?: () => void; onSettings?: () => void };
+  controls?: {
+    statusVisible?: boolean;
+    onWake?: () => void;
+    onMusic?: () => void;
+    onSettings?: () => void;
+  };
   onToggleTask?: (taskId: string, nextCompleted: boolean) => void;
   onAlarmEnabledChange?: (enabled: boolean) => void;
   onSnoozeAlarm?: () => void;
@@ -96,6 +101,7 @@ export function AmbientDisplay({
   const visible = ["awakening", "glance", "interactive", "celebration", "settings"].includes(mode);
   const isInteractive = mode === "interactive";
   const celebrationVisible = mode === "celebration" || Boolean(celebration?.visible);
+  const sparse = !contributions && !scores?.length && !alarm;
 
   return (
     <main
@@ -110,7 +116,9 @@ export function AmbientDisplay({
       ) : null}
       <div className="ambient-display__vignette" aria-hidden="true" />
       {visible ? (
-        <div className="ambient-display__islands">
+        <div
+          className={`ambient-display__islands${sparse ? " ambient-display__islands--sparse" : ""}`}
+        >
           <Hero {...hero} weather={weather} />
           <CalendarCard {...calendar} />
           {contributions ? <ContributionsHeatmap {...contributions} /> : null}
@@ -128,6 +136,7 @@ export function AmbientDisplay({
       {mode !== "sleep" ? (
         <FloatingControls
           interactive={isInteractive}
+          statusVisible={controls?.statusVisible}
           onWake={controls?.onWake}
           onMusic={controls?.onMusic}
           onSettings={controls?.onSettings}

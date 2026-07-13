@@ -3,6 +3,7 @@ const COMMANDS: &[&str] = &[
     "configure_wallpaper_engine",
     "apply_wallpaper_scene",
     "test_wallpaper_scene",
+    "close_in_app_wallpaper",
     "get_github_commits",
     "refresh_sports",
     "transcribe_audio",

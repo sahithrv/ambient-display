@@ -114,8 +114,8 @@ export function WallpaperSetup({
 
       const result = await configureWallpaperEngine({
         executablePath: saved.executablePath,
-        monitorIndex: saved.monitorIndex,
-        playlists: saved.playlists,
+        wallpaperFile: saved.wallpaperFile,
+        wallpaperFiles: saved.wallpaperFiles,
       });
       if (!result.ok) {
         setApplying(false);
@@ -238,9 +238,11 @@ export function WallpaperSetup({
       <div className="wallpaper-setup__header">
         <div>
           <p className="app-settings__eyebrow" id="wallpaper-setup-title">
-            Wallpaper Engine setup
+            In-app wallpaper
           </p>
-          <span>Non-secret local preferences; native validation is always applied again.</span>
+          <span>
+            Wallpaper Engine renders behind the Ambient Glass interface, not on the desktop.
+          </span>
         </div>
         <i
           aria-label={
@@ -273,25 +275,24 @@ export function WallpaperSetup({
             value={settings.executablePath ?? ""}
           />
         </label>
-        <label className="wallpaper-setup__monitor">
-          <span>Wallpaper Engine monitor</span>
+        <label className="wallpaper-setup__background">
+          <span>Default Wallpaper Engine file</span>
           <input
-            aria-describedby="wallpaper-monitor-help"
-            max={15}
-            min={0}
+            aria-describedby="wallpaper-file-help"
+            autoComplete="off"
             onChange={(event) =>
               updateSettings((current) => ({
                 ...current,
-                monitorIndex: Number(event.target.value),
+                wallpaperFile: event.target.value || undefined,
               }))
             }
-            type="number"
-            value={settings.monitorIndex}
+            placeholder="…\\workshop\\content\\431960\\…\\project.json"
+            value={settings.wallpaperFile ?? ""}
           />
         </label>
-        <p className="wallpaper-setup__help" id="wallpaper-monitor-help">
-          This changes Wallpaper Engine&apos;s playlist target only; it does not move the Ambient
-          Glass app window.
+        <p className="wallpaper-setup__help" id="wallpaper-file-help">
+          In Wallpaper Engine, right-click a wallpaper and choose Open in Explorer. Paste its
+          project.json, scene.pkg, MP4, WebM, or index.html path here.
         </p>
         <label className="wallpaper-setup__overlay-monitor">
           <span>Ambient Glass window display</span>
@@ -348,42 +349,64 @@ export function WallpaperSetup({
             }
             type="checkbox"
           />
-          <span>Use the calm internal fallback instead of Wallpaper Engine</span>
+          <span>Use the calm internal scene instead of the in-app Wallpaper Engine background</span>
         </label>
 
-        <div className="wallpaper-setup__playlist-header">
-          <strong>Scene playlists</strong>
-          <span>Each scene is safe to test independently.</span>
-        </div>
-        <div className="wallpaper-setup__playlists">
-          {WALLPAPER_SCENE_KEYS.map((scene) => (
-            <label className="wallpaper-setup__playlist" key={scene}>
-              <span>{sceneLabel(scene)}</span>
-              <input
-                aria-label={`${sceneLabel(scene)} playlist`}
-                onChange={(event) =>
-                  updateSettings((current) => ({
-                    ...current,
-                    playlists: { ...current.playlists, [scene]: event.target.value },
-                  }))
-                }
-                value={settings.playlists[scene]}
-              />
-              <button
-                className="glass-action glass-action--quiet"
-                disabled={applying || testingScene !== null}
-                onClick={() => void testScene(scene)}
-                type="button"
-              >
-                {testingScene === scene ? "Testing…" : "Test"}
-              </button>
-            </label>
-          ))}
-        </div>
+        <details className="wallpaper-setup__scene-overrides">
+          <summary>
+            <strong>Optional weather and time overrides</strong>
+            <span>Missing scenes use the default file.</span>
+          </summary>
+          <div className="wallpaper-setup__playlists">
+            {WALLPAPER_SCENE_KEYS.map((scene) => (
+              <label className="wallpaper-setup__playlist" key={scene}>
+                <span>{sceneLabel(scene)}</span>
+                <input
+                  aria-label={`${sceneLabel(scene)} wallpaper file`}
+                  onChange={(event) =>
+                    updateSettings((current) => {
+                      const wallpaperFiles = { ...current.wallpaperFiles };
+                      if (event.target.value) {
+                        wallpaperFiles[scene] = event.target.value;
+                      } else {
+                        delete wallpaperFiles[scene];
+                      }
+                      return { ...current, wallpaperFiles };
+                    })
+                  }
+                  placeholder="Uses default file"
+                  value={settings.wallpaperFiles[scene] ?? ""}
+                />
+                <button
+                  className="glass-action glass-action--quiet"
+                  disabled={applying || testingScene !== null}
+                  onClick={() => void testScene(scene)}
+                  type="button"
+                >
+                  {testingScene === scene ? "Showing…" : "Show"}
+                </button>
+              </label>
+            ))}
+          </div>
+        </details>
 
         <div className="wallpaper-setup__actions">
           <button className="glass-action glass-action--primary" disabled={applying} type="submit">
-            {applying ? "Applying…" : "Save & apply"}
+            {applying ? "Opening…" : "Save & show in app"}
+          </button>
+          <button
+            className="glass-action glass-action--quiet"
+            disabled={applying || testingScene !== null}
+            onClick={() =>
+              void testScene(
+                resolvedLock.mode === "locked" && resolvedLock.sceneKey
+                  ? resolvedLock.sceneKey
+                  : "fallback.any",
+              )
+            }
+            type="button"
+          >
+            {testingScene ? "Showing…" : "Preview in app"}
           </button>
           <button
             className="glass-action glass-action--quiet"

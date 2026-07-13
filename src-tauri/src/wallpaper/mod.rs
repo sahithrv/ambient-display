@@ -1,4 +1,4 @@
-//! A constrained adapter for Wallpaper Engine's `openPlaylist` CLI control.
+//! A constrained adapter for Wallpaper Engine's documented in-window playback.
 //!
 //! This is deliberately *not* a generic process runner. The only native
 //! process this module may start is a validated `wallpaper64.exe`, using the
@@ -12,6 +12,9 @@ use std::{collections::BTreeMap, fmt, path::PathBuf, sync::Mutex};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
+#[cfg(target_os = "windows")]
+use tauri::Manager;
 
 /// The complete set of scene keys. Deserializing this enum rejects unknown
 /// scene names before a command reaches the adapter.
@@ -134,8 +137,8 @@ pub struct WallpaperEngineStatus {
     pub adapter: WallpaperAdapterKind,
     pub available: bool,
     pub has_configured_path: bool,
-    pub monitor_index: u8,
-    pub playlist_count: usize,
+    pub background_count: usize,
+    pub in_app_active: bool,
     pub message: String,
 }
 
@@ -143,14 +146,14 @@ pub struct WallpaperEngineStatus {
 #[serde(rename_all = "camelCase")]
 pub struct WallpaperOperationResult {
     pub scene: SceneKey,
-    pub playlist: String,
-    /// True only when a native or mock adapter accepted a playlist operation.
+    /// True only when a native or mock adapter accepted an in-app operation.
     /// A duplicate automatic request returns `false` without launching a child.
     pub applied: bool,
     /// The requested scene was already recorded as active by this controller.
     /// This is a successful terminal result for the frontend retry policy.
     pub duplicate: bool,
     pub mocked: bool,
+    pub in_app: bool,
     pub message: String,
 }
 
@@ -164,93 +167,62 @@ pub struct WallpaperSettingsInput {
     /// automatic discovery; it cannot point at an arbitrary program.
     #[serde(default)]
     pub executable_path: Option<String>,
-    /// Wallpaper Engine monitor number. This is passed only to Wallpaper
-    /// Engine's `-monitor` argument; it does not select the Tauri overlay
-    /// window's display. A bounded range avoids malformed command input while
-    /// supporting common multi-display arrangements.
     #[serde(default)]
-    pub monitor_index: u8,
-    /// Partial overrides are merged with the safe default scene map. Unknown
-    /// scene keys fail enum deserialization before this command is entered.
+    pub wallpaper_file: Option<String>,
+    /// Optional weather/time overrides. Unknown scene keys fail enum
+    /// deserialization before this command is entered.
     #[serde(default)]
-    pub playlists: BTreeMap<SceneKey, String>,
+    pub wallpaper_files: BTreeMap<SceneKey, String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct WallpaperConfiguration {
     executable_path: Option<PathBuf>,
-    monitor_index: u8,
-    playlists: BTreeMap<SceneKey, String>,
-}
-
-impl Default for WallpaperConfiguration {
-    fn default() -> Self {
-        let playlists = BTreeMap::from([
-            (SceneKey::ClearDawn, "AG Clear Dawn".to_owned()),
-            (SceneKey::ClearDay, "AG Clear Day".to_owned()),
-            (SceneKey::ClearSunset, "AG Clear Sunset".to_owned()),
-            (SceneKey::ClearNight, "AG Clear Night".to_owned()),
-            (SceneKey::CloudyDay, "AG Cloudy Day".to_owned()),
-            (SceneKey::CloudyNight, "AG Cloudy Night".to_owned()),
-            (SceneKey::RainDay, "AG Rain Day".to_owned()),
-            (SceneKey::RainNight, "AG Rain Night".to_owned()),
-            (SceneKey::StormAny, "AG Storm".to_owned()),
-            (SceneKey::FogAny, "AG Fog".to_owned()),
-            (SceneKey::SnowAny, "AG Snow".to_owned()),
-            (SceneKey::FallbackAny, "AG Fallback".to_owned()),
-        ]);
-
-        Self {
-            executable_path: None,
-            monitor_index: 0,
-            playlists,
-        }
-    }
+    wallpaper_file: Option<PathBuf>,
+    wallpaper_files: BTreeMap<SceneKey, PathBuf>,
 }
 
 impl WallpaperConfiguration {
     fn apply_input(&mut self, input: WallpaperSettingsInput) -> Result<(), CommandError> {
-        if input.monitor_index > 15 {
-            return Err(CommandError::Validation {
-                field: "monitorIndex",
-                message: "Choose a monitor index from 0 through 15.".to_owned(),
-            });
-        }
-
         let executable_path = input
             .executable_path
             .as_deref()
             .map(validate_executable_path)
             .transpose()?;
-
-        for playlist in input.playlists.values() {
-            validate_playlist_name(playlist)?;
+        let wallpaper_file = input
+            .wallpaper_file
+            .as_deref()
+            .map(validate_wallpaper_path)
+            .transpose()?;
+        let mut wallpaper_files = BTreeMap::new();
+        for (scene, file) in input.wallpaper_files {
+            wallpaper_files.insert(scene, validate_wallpaper_path(&file)?);
         }
 
         self.executable_path = executable_path;
-        self.monitor_index = input.monitor_index;
-        self.playlists.extend(input.playlists);
+        self.wallpaper_file = wallpaper_file;
+        self.wallpaper_files = wallpaper_files;
         Ok(())
     }
 
-    fn playlist_for(&self, scene: SceneKey) -> Result<String, CommandError> {
-        let playlist = self
-            .playlists
+    fn wallpaper_for(&self, scene: SceneKey) -> Result<PathBuf, CommandError> {
+        let wallpaper = self
+            .wallpaper_files
             .get(&scene)
+            .or_else(|| self.wallpaper_files.get(&SceneKey::FallbackAny))
+            .or(self.wallpaper_file.as_ref())
             .ok_or_else(|| CommandError::State {
-                message: "The requested scene is not configured.".to_owned(),
+                message: "Choose an in-app Wallpaper Engine file in settings.".to_owned(),
             })?;
-
-        // Validate once more at the trust boundary in case a future storage
-        // migration or internal caller changes the configuration representation.
-        validate_playlist_name(playlist)?;
-        Ok(playlist.clone())
+        Ok(wallpaper.clone())
     }
 }
 
 struct ControllerState {
     configuration: WallpaperConfiguration,
     last_scene: Option<SceneKey>,
+    #[cfg(target_os = "windows")]
+    background_window: Option<isize>,
 }
 
 /// Shared native state. The mutex only protects a small settings snapshot and
@@ -266,6 +238,8 @@ impl Default for WallpaperEngineController {
             state: Mutex::new(ControllerState {
                 configuration: WallpaperConfiguration::default(),
                 last_scene: None,
+                #[cfg(target_os = "windows")]
+                background_window: None,
             }),
         }
     }
@@ -274,7 +248,13 @@ impl Default for WallpaperEngineController {
 impl WallpaperEngineController {
     pub fn status(&self) -> Result<WallpaperEngineStatus, CommandError> {
         let state = self.lock()?;
-        Ok(platform_status(&state.configuration))
+        #[cfg(target_os = "windows")]
+        let in_app_active = state
+            .background_window
+            .is_some_and(background_window_is_valid);
+        #[cfg(not(target_os = "windows"))]
+        let in_app_active = false;
+        Ok(platform_status(&state.configuration, in_app_active))
     }
 
     pub fn configure(
@@ -286,18 +266,42 @@ impl WallpaperEngineController {
         // A changed map must be allowed to apply immediately, even if its scene
         // key matches the last automatic selection.
         state.last_scene = None;
-        Ok(platform_status(&state.configuration))
+        #[cfg(target_os = "windows")]
+        let in_app_active = state
+            .background_window
+            .is_some_and(background_window_is_valid);
+        #[cfg(not(target_os = "windows"))]
+        let in_app_active = false;
+        Ok(platform_status(&state.configuration, in_app_active))
     }
 
     pub fn apply_scene(
         &self,
+        app: &AppHandle,
         scene: SceneKey,
         force: bool,
     ) -> Result<WallpaperOperationResult, CommandError> {
-        let (configuration, playlist, duplicate) = {
+        let (configuration, wallpaper, duplicate) = {
             let mut state = self.lock()?;
-            let playlist = state.configuration.playlist_for(scene)?;
-            let duplicate = !force && state.last_scene == Some(scene);
+            let wallpaper = state.configuration.wallpaper_for(scene)?;
+            #[cfg(target_os = "windows")]
+            let in_app_active = state
+                .background_window
+                .is_some_and(background_window_is_valid);
+            #[cfg(not(target_os = "windows"))]
+            let in_app_active = true;
+
+            // Wallpaper Engine can close its playback window independently.
+            // A stale scene claim must never suppress the relaunch that repairs
+            // that condition.
+            if !in_app_active {
+                state.last_scene = None;
+                #[cfg(target_os = "windows")]
+                {
+                    state.background_window = None;
+                }
+            }
+            let duplicate = !force && in_app_active && state.last_scene == Some(scene);
 
             if !duplicate {
                 // Claim the scene before launching to suppress concurrent
@@ -305,23 +309,27 @@ impl WallpaperEngineController {
                 state.last_scene = Some(scene);
             }
 
-            (state.configuration.clone(), playlist, duplicate)
+            (state.configuration.clone(), wallpaper, duplicate)
         };
 
         if duplicate {
             return Ok(WallpaperOperationResult {
                 scene,
-                playlist,
                 applied: false,
                 duplicate: true,
                 mocked: !cfg!(target_os = "windows"),
+                in_app: cfg!(target_os = "windows"),
                 message: "Scene already active; duplicate command suppressed.".to_owned(),
             });
         }
 
-        match open_playlist(&configuration, &playlist) {
-            Ok(mut result) => {
+        match open_in_app_wallpaper(app, &configuration, &wallpaper) {
+            Ok((mut result, _background_window)) => {
                 result.scene = scene;
+                #[cfg(target_os = "windows")]
+                {
+                    self.lock()?.background_window = _background_window;
+                }
                 Ok(result)
             }
             Err(error) => {
@@ -334,6 +342,48 @@ impl WallpaperEngineController {
         }
     }
 
+    pub fn close_in_app(&self) -> Result<(), CommandError> {
+        let configuration = {
+            let state = self.lock()?;
+            state.configuration.clone()
+        };
+        close_in_app_wallpaper(&configuration)?;
+
+        let mut state = self.lock()?;
+        state.last_scene = None;
+        #[cfg(target_os = "windows")]
+        {
+            state.background_window = None;
+        }
+        Ok(())
+    }
+
+    pub fn sync_with_app(&self, app: &AppHandle) {
+        #[cfg(target_os = "windows")]
+        {
+            let background = self.lock().ok().and_then(|state| state.background_window);
+            if let Some(background) = background {
+                if !background_window_is_valid(background) {
+                    if let Ok(mut state) = self.lock() {
+                        if state.background_window == Some(background) {
+                            state.background_window = None;
+                            state.last_scene = None;
+                        }
+                    }
+                } else if sync_background_window(app, background, false).is_err() {
+                    // Geometry can be temporarily unavailable while a window
+                    // is moving between displays. A later native window event
+                    // retries the synchronization; avoid logging paths or raw
+                    // operating-system errors here.
+                    log::warn!("The in-app wallpaper window could not be synchronized.");
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        let _ = app;
+    }
+
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, ControllerState>, CommandError> {
         self.state.lock().map_err(|_| CommandError::State {
             message: "Wallpaper control is temporarily unavailable.".to_owned(),
@@ -341,32 +391,34 @@ impl WallpaperEngineController {
     }
 }
 
-/// Playlist labels are not interpreted by a shell, but keeping them short and
-/// path-free prevents accidental configuration mistakes and makes the settings
-/// file safe to display or audit.
-fn validate_playlist_name(value: &str) -> Result<(), CommandError> {
+fn validate_wallpaper_path(value: &str) -> Result<PathBuf, CommandError> {
     let trimmed = value.trim();
     if value.is_empty() || value != trimmed {
         return Err(CommandError::Validation {
-            field: "playlists",
-            message: "Playlist names cannot be empty or start/end with whitespace.".to_owned(),
+            field: "wallpaperFile",
+            message: "Wallpaper file paths cannot be empty or start/end with whitespace."
+                .to_owned(),
         });
     }
-    if value.chars().count() > 96 {
+    if value.chars().count() > 1024 || value.chars().any(char::is_control) {
         return Err(CommandError::Validation {
-            field: "playlists",
-            message: "Playlist names must be 96 characters or fewer.".to_owned(),
+            field: "wallpaperFile",
+            message: "Wallpaper file path is invalid.".to_owned(),
         });
     }
-    if value.chars().any(|character| {
-        character.is_control() || matches!(character, '/' | '\\' | '"' | '\'' | '`')
-    }) {
+    let lower = value.to_ascii_lowercase();
+    let supported = lower.ends_with("project.json")
+        || lower.ends_with(".pkg")
+        || lower.ends_with(".mp4")
+        || lower.ends_with(".webm")
+        || lower.ends_with(".html");
+    if !supported {
         return Err(CommandError::Validation {
-            field: "playlists",
-            message: "Playlist names contain unsupported characters.".to_owned(),
+            field: "wallpaperFile",
+            message: "Use project.json, scene.pkg, MP4, WebM, or index.html.".to_owned(),
         });
     }
-    Ok(())
+    Ok(PathBuf::from(value))
 }
 
 /// A custom executable must still use Steam's normal Wallpaper Engine install
@@ -411,7 +463,12 @@ fn validate_executable_path(value: &str) -> Result<PathBuf, CommandError> {
     Ok(PathBuf::from(value))
 }
 
-fn platform_status(configuration: &WallpaperConfiguration) -> WallpaperEngineStatus {
+fn platform_status(
+    configuration: &WallpaperConfiguration,
+    in_app_active: bool,
+) -> WallpaperEngineStatus {
+    let background_count =
+        usize::from(configuration.wallpaper_file.is_some()) + configuration.wallpaper_files.len();
     #[cfg(target_os = "windows")]
     {
         let available = resolve_windows_executable(configuration).is_some();
@@ -419,10 +476,16 @@ fn platform_status(configuration: &WallpaperConfiguration) -> WallpaperEngineSta
             adapter: WallpaperAdapterKind::Native,
             available,
             has_configured_path: configuration.executable_path.is_some(),
-            monitor_index: configuration.monitor_index,
-            playlist_count: configuration.playlists.len(),
+            background_count,
+            in_app_active,
             message: if available {
-                "Wallpaper Engine control is ready.".to_owned()
+                if in_app_active {
+                    "Wallpaper Engine is rendering inside Ambient Glass.".to_owned()
+                } else if background_count > 0 {
+                    "In-app Wallpaper Engine playback is configured.".to_owned()
+                } else {
+                    "Wallpaper Engine is ready. Choose an in-app wallpaper file.".to_owned()
+                }
             } else {
                 "Wallpaper Engine was not found. Choose its Steam installation in settings."
                     .to_owned()
@@ -432,23 +495,34 @@ fn platform_status(configuration: &WallpaperConfiguration) -> WallpaperEngineSta
 
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = in_app_active;
         WallpaperEngineStatus {
             adapter: WallpaperAdapterKind::Mock,
             available: false,
             has_configured_path: configuration.executable_path.is_some(),
-            monitor_index: configuration.monitor_index,
-            playlist_count: configuration.playlists.len(),
-            message: "Wallpaper Engine control is mocked outside Windows.".to_owned(),
+            background_count,
+            in_app_active: false,
+            message: "In-app Wallpaper Engine playback is available on Windows only.".to_owned(),
         }
     }
 }
 
 #[cfg(target_os = "windows")]
-fn open_playlist(
+const BACKGROUND_WINDOW_NAME: &str = "Ambient Glass Background";
+
+#[cfg(target_os = "windows")]
+fn open_in_app_wallpaper(
+    app: &AppHandle,
     configuration: &WallpaperConfiguration,
-    playlist: &str,
-) -> Result<WallpaperOperationResult, CommandError> {
-    use std::process::{Command, Stdio};
+    wallpaper: &Path,
+) -> Result<(WallpaperOperationResult, Option<isize>), CommandError> {
+    use std::{
+        process::{Command, Stdio},
+        thread,
+        time::Duration,
+    };
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
 
     let executable =
         resolve_windows_executable(configuration).ok_or_else(|| CommandError::Unavailable {
@@ -456,16 +530,46 @@ fn open_playlist(
                 .to_owned(),
         })?;
 
-    // This is intentionally the only process launch in this crate. `Command`
-    // receives a validated executable and separate, fixed argument positions;
-    // no command interpreter, command string, or user-controlled flag exists.
+    let wallpaper = wallpaper
+        .canonicalize()
+        .map_err(|_| CommandError::Unavailable {
+            message: "The configured wallpaper file could not be found.".to_owned(),
+        })?;
+    if !wallpaper.is_file() {
+        return Err(CommandError::Unavailable {
+            message: "The configured wallpaper file could not be found.".to_owned(),
+        });
+    }
+    validate_wallpaper_path(&wallpaper.to_string_lossy())?;
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| CommandError::State {
+            message: "The Ambient Glass window is unavailable.".to_owned(),
+        })?;
+    let position = window.inner_position().map_err(|_| CommandError::State {
+        message: "The app background position could not be read.".to_owned(),
+    })?;
+    let size = window.inner_size().map_err(|_| CommandError::State {
+        message: "The app background size could not be read.".to_owned(),
+    })?;
+
     Command::new(executable)
         .arg("-control")
-        .arg("openPlaylist")
-        .arg("-playlist")
-        .arg(playlist)
-        .arg("-monitor")
-        .arg(configuration.monitor_index.to_string())
+        .arg("openWallpaper")
+        .arg("-file")
+        .arg(&wallpaper)
+        .arg("-playInWindow")
+        .arg(BACKGROUND_WINDOW_NAME)
+        .arg("-width")
+        .arg(size.width.to_string())
+        .arg("-height")
+        .arg(size.height.to_string())
+        .arg("-x")
+        .arg(position.x.to_string())
+        .arg("-y")
+        .arg(position.y.to_string())
+        .arg("-borderless")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -474,31 +578,171 @@ fn open_playlist(
             message: "Wallpaper Engine could not be started.".to_owned(),
         })?;
 
-    Ok(WallpaperOperationResult {
-        scene: SceneKey::FallbackAny,
-        playlist: playlist.to_owned(),
-        applied: true,
-        duplicate: false,
-        mocked: false,
-        message: "Playlist command sent to Wallpaper Engine.".to_owned(),
-    })
+    let title = wide_null(BACKGROUND_WINDOW_NAME);
+    let mut background = 0 as HWND;
+    for _ in 0..40 {
+        background = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+        if background != 0 as HWND {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    if background == 0 as HWND {
+        return Err(CommandError::Launch {
+            message: "Wallpaper Engine opened, but its in-app window did not become ready."
+                .to_owned(),
+        });
+    }
+
+    let background = background as isize;
+    sync_background_window(app, background, true)?;
+    Ok((
+        WallpaperOperationResult {
+            scene: SceneKey::FallbackAny,
+            applied: true,
+            duplicate: false,
+            mocked: false,
+            in_app: true,
+            message: "Wallpaper Engine is now rendering behind the Ambient Glass interface."
+                .to_owned(),
+        },
+        Some(background),
+    ))
 }
 
 #[cfg(not(target_os = "windows"))]
-fn open_playlist(
+fn open_in_app_wallpaper(
+    _app: &AppHandle,
     _configuration: &WallpaperConfiguration,
-    playlist: &str,
-) -> Result<WallpaperOperationResult, CommandError> {
-    // This mock intentionally performs no desktop operation and has no hidden
-    // fallback to a shell command. It makes previews and visual tests stable.
-    Ok(WallpaperOperationResult {
-        scene: SceneKey::FallbackAny,
-        playlist: playlist.to_owned(),
-        applied: true,
-        duplicate: false,
-        mocked: true,
-        message: "Mock playlist change recorded; Wallpaper Engine runs only on Windows.".to_owned(),
-    })
+    _wallpaper: &std::path::Path,
+) -> Result<(WallpaperOperationResult, Option<isize>), CommandError> {
+    Ok((
+        WallpaperOperationResult {
+            scene: SceneKey::FallbackAny,
+            applied: true,
+            duplicate: false,
+            mocked: true,
+            in_app: false,
+            message: "In-app Wallpaper Engine playback is mocked outside Windows.".to_owned(),
+        },
+        None,
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn sync_background_window(
+    app: &AppHandle,
+    background: isize,
+    refresh_window_style: bool,
+) -> Result<(), CommandError> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WS_EX_APPWINDOW,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    };
+
+    let background = background as windows_sys::Win32::Foundation::HWND;
+    if !background_window_is_valid(background as isize) {
+        return Err(CommandError::State {
+            message: "The in-app Wallpaper Engine window is no longer available.".to_owned(),
+        });
+    }
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| CommandError::State {
+            message: "The Ambient Glass window is unavailable.".to_owned(),
+        })?;
+    if refresh_window_style {
+        unsafe {
+            let style = GetWindowLongPtrW(background, GWL_EXSTYLE);
+            let style = (style & !(WS_EX_APPWINDOW as isize))
+                | WS_EX_TOOLWINDOW as isize
+                | WS_EX_NOACTIVATE as isize;
+            SetWindowLongPtrW(background, GWL_EXSTYLE, style);
+        }
+    }
+    let visible = window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false);
+    if !visible {
+        unsafe { ShowWindow(background, SW_HIDE) };
+        return Ok(());
+    }
+
+    let position = window.inner_position().map_err(|_| CommandError::State {
+        message: "The app background position could not be read.".to_owned(),
+    })?;
+    let size = window.inner_size().map_err(|_| CommandError::State {
+        message: "The app background size could not be read.".to_owned(),
+    })?;
+    let main = window
+        .hwnd()
+        .map_err(|_| CommandError::State {
+            message: "The app window handle is unavailable.".to_owned(),
+        })?
+        .0 as windows_sys::Win32::Foundation::HWND;
+    let width = i32::try_from(size.width).map_err(|_| CommandError::State {
+        message: "The app background size is unsupported.".to_owned(),
+    })?;
+    let height = i32::try_from(size.height).map_err(|_| CommandError::State {
+        message: "The app background size is unsupported.".to_owned(),
+    })?;
+
+    unsafe {
+        let flags = SWP_NOACTIVATE
+            | SWP_SHOWWINDOW
+            | if refresh_window_style {
+                SWP_FRAMECHANGED
+            } else {
+                0
+            };
+        let positioned = SetWindowPos(
+            background, main, position.x, position.y, width, height, flags,
+        );
+        if positioned == 0 {
+            return Err(CommandError::State {
+                message: "The in-app wallpaper could not follow the Ambient Glass window."
+                    .to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn background_window_is_valid(background: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::IsWindow;
+
+    unsafe { IsWindow(background as windows_sys::Win32::Foundation::HWND) != 0 }
+}
+
+#[cfg(target_os = "windows")]
+fn close_in_app_wallpaper(configuration: &WallpaperConfiguration) -> Result<(), CommandError> {
+    use std::process::{Command, Stdio};
+    let Some(executable) = resolve_windows_executable(configuration) else {
+        return Ok(());
+    };
+    Command::new(executable)
+        .arg("-control")
+        .arg("closeWallpaper")
+        .arg("-location")
+        .arg(BACKGROUND_WINDOW_NAME)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| CommandError::Launch {
+            message: "The in-app Wallpaper Engine window could not be closed.".to_owned(),
+        })?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn close_in_app_wallpaper(_configuration: &WallpaperConfiguration) -> Result<(), CommandError> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 #[cfg(target_os = "windows")]
@@ -567,7 +811,7 @@ fn read_steam_path(root: &winreg::RegKey, key: &str) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_executable_path, validate_playlist_name, SceneKey};
+    use super::{validate_executable_path, validate_wallpaper_path, SceneKey};
 
     #[test]
     fn plan_scene_keys_are_complete_and_unique() {
@@ -577,10 +821,14 @@ mod tests {
     }
 
     #[test]
-    fn playlist_validation_rejects_path_like_input() {
-        assert!(validate_playlist_name("AG Rain Night").is_ok());
-        assert!(validate_playlist_name("AG Rain/Night").is_err());
-        assert!(validate_playlist_name(" AG Rain Night").is_err());
+    fn wallpaper_validation_accepts_only_supported_background_files() {
+        assert!(validate_wallpaper_path(
+            r"C:\\Steam\\steamapps\\workshop\\content\\431960\\123\\project.json"
+        )
+        .is_ok());
+        assert!(validate_wallpaper_path(r"D:\\Wallpapers\\rain.mp4").is_ok());
+        assert!(validate_wallpaper_path(r"D:\\Wallpapers\\unsafe.exe").is_err());
+        assert!(validate_wallpaper_path(r" D:\\Wallpapers\\rain.mp4").is_err());
     }
 
     #[test]

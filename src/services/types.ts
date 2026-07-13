@@ -21,22 +21,19 @@ export interface ProviderHealth {
   detail: string;
 }
 
-/**
- * Non-secret input accepted by the narrow native Wallpaper Engine command.
- * `monitorIndex` controls Wallpaper Engine's target monitor only; it does not
- * position the Tauri application window.
- */
+/** Non-secret input accepted by the narrow native Wallpaper Engine command. */
 export interface WallpaperEngineSettingsInput {
   executablePath?: string;
-  monitorIndex: number;
-  playlists: Partial<Record<SceneKey, string>>;
+  /** Default Wallpaper Engine project/video rendered behind the app UI. */
+  wallpaperFile?: string;
+  /** Optional weather/time overrides; missing scenes use `wallpaperFile`. */
+  wallpaperFiles: Partial<Record<SceneKey, string>>;
 }
 
 /** Frontend-persisted wallpaper preferences, safe for Tauri Store/local storage. */
 export interface WallpaperSettings extends WallpaperEngineSettingsInput {
-  version: 1;
-  playlists: Record<SceneKey, string>;
-  /** Separate from Wallpaper Engine's `monitorIndex`: hosts the app window itself. */
+  version: 2;
+  /** Selects which display hosts the regular Ambient Glass app window. */
   overlayMonitorIndex: number;
   sceneLock: SceneLock;
   fallbackMode: "automatic" | "force-internal";

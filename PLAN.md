@@ -14,20 +14,20 @@
 
 # 1. Product vision
 
-Ambient Glass turns an older Windows laptop into a piece of living room decor: a cinematic Wallpaper Engine scene that changes with local time and weather, plus an elegant “Liquid Glass” information layer that materializes when a person approaches.
+Ambient Glass turns an older Windows laptop into a piece of living room decor: a cinematic Wallpaper Engine scene rendered inside an ordinary, exitable app window and changed with local time and weather, plus an elegant “Liquid Glass” information layer that materializes when a person approaches.
 
 The result must not look like a conventional productivity dashboard. It should feel like an environmental display or a piece of digital furniture. Information is temporary, restrained, and subordinate to the scene.
 
 The core experience is:
 
-1. Wallpaper Engine provides the animated environment.
-2. A full-screen transparent Tauri application remains running above the desktop.
+1. Wallpaper Engine renders a selected project, scene package, video, or web wallpaper into a named in-window surface behind the app UI.
+2. A conventional, resizable Tauri application remains visible in the taskbar and always retains normal minimize, maximize, and close behavior.
 3. When nobody is nearby, the application is visually absent or in an optional black sleep state.
 4. Local face detection notices that someone has approached.
 5. Liquid-glass islands grow into view with a controlled 700–1,000 ms animation.
 6. The display shows only the most relevant information for that moment.
 7. The information recedes after the user leaves.
-8. Time and weather choose the Wallpaper Engine playlist automatically.
+8. Time and weather choose an optional per-scene Wallpaper Engine file automatically.
 9. Voice, tasks, calendar, sports, GitHub, alarms, and celebrations add utility without turning the display into a busy control panel.
 
 ---
@@ -42,11 +42,11 @@ Use two finish lines:
 
 The hero demo should be prioritized first and should include:
 
-- Transparent, borderless, full-screen overlay.
-- Wallpaper Engine visible underneath.
+- A conventional, exitable app window with Wallpaper Engine visible inside its background.
+- The Windows desktop wallpaper is never changed by Ambient Glass.
 - A polished Liquid Glass reveal and dismissal animation.
 - Clock, weather, next calendar item, task progress, GitHub count, and sports ticker using mock data.
-- Live weather and automatic Wallpaper Engine playlist switching.
+- Live weather and automatic Wallpaper Engine file switching.
 - A demo control panel that can simulate time, weather, presence, alarms, and task completion.
 - A screen-recordable composition suitable for a LinkedIn post.
 
@@ -76,7 +76,7 @@ Codex should reach the hero-demo checkpoint early, then continue toward the dail
 
 ## 3.1 Ambient art first
 
-The wallpaper should remain the dominant visual element. The overlay should normally occupy no more than roughly 20–30% of the display area.
+The wallpaper should remain the dominant visual element. The visible information islands should normally occupy no more than roughly 20–30% of the app client area.
 
 ## 3.2 Automatic by default
 
@@ -169,7 +169,7 @@ Behavior:
 - Wallpaper Engine is fully visible.
 - All major UI is visually absent.
 - An optional minimal clock and temperature may remain at 10–20% opacity if the final mock calls for it.
-- The window ignores pointer events.
+- The app continues receiving normal keyboard and pointer input so the user can wake, interact with, minimize, or close it.
 
 Exit:
 
@@ -280,47 +280,27 @@ Visual direction:
 
 # 5. Wallpaper Engine strategy
 
-Wallpaper Engine owns the animated scene. Ambient Glass owns orchestration and information.
+Wallpaper Engine owns the animated scene. Ambient Glass owns orchestration and information. The selected wallpaper is rendered in a named in-window surface aligned behind the Ambient Glass client area; Ambient Glass never changes the Windows desktop wallpaper or targets a desktop monitor.
 
-## 5.1 Playlist naming
+## 5.1 Wallpaper file mapping
 
-Create playlists with exact, stable names. Start with this compact set:
+Choose one specific wallpaper file as the default in-app background. Supported inputs are a Wallpaper Engine `project.json` or packaged scene, a supported video such as MP4/WebM, or a web-wallpaper HTML entry file. In Wallpaper Engine, **Open in Explorer** on a subscribed wallpaper to find the correct project entry file.
 
-```text
-AG Clear Dawn
-AG Clear Day
-AG Clear Sunset
-AG Clear Night
-AG Cloudy Day
-AG Cloudy Night
-AG Rain Day
-AG Rain Night
-AG Storm
-AG Fog
-AG Snow
-AG Fallback
-```
-
-The application should map internal scene keys to user-editable playlist names so the names can change later without code edits.
+The application may map internal scene keys to user-editable file paths so weather and day-part changes can select another in-app background without code edits. A missing per-scene value falls back to the default file.
 
 Example non-secret configuration:
 
 ```json
 {
-  "clear.dawn": "AG Clear Dawn",
-  "clear.day": "AG Clear Day",
-  "clear.sunset": "AG Clear Sunset",
-  "clear.night": "AG Clear Night",
-  "cloudy.day": "AG Cloudy Day",
-  "cloudy.night": "AG Cloudy Night",
-  "rain.day": "AG Rain Day",
-  "rain.night": "AG Rain Night",
-  "storm.any": "AG Storm",
-  "fog.any": "AG Fog",
-  "snow.any": "AG Snow",
-  "fallback.any": "AG Fallback"
+  "wallpaperFile": "C:\\Wallpapers\\calm-lake\\project.json",
+  "wallpaperFiles": {
+    "clear.day": "C:\\Wallpapers\\bright-lake\\project.json",
+    "rain.night": "C:\\Wallpapers\\rain-window\\scene.pkg"
+  }
 }
 ```
+
+Wallpaper Engine playlist names cannot be used here. Its `openPlaylist` command does not support the `playInWindow` option required to keep the wallpaper inside Ambient Glass.
 
 ## 5.2 Art-direction rules for wallpaper selection
 
@@ -336,7 +316,7 @@ Recommended direction:
 - Similar color grading across each time-of-day group.
 - Avoid mixing anime, pixel art, photorealism, cyberpunk HUDs, and nature photography in one experience.
 
-Put 2–4 wallpapers in each main playlist. More variety is not automatically better.
+Start with one excellent default wallpaper, then add only the per-scene overrides that materially improve the atmosphere. More variety is not automatically better.
 
 ## 5.3 Automatic scene selection
 
@@ -379,18 +359,18 @@ Use WMO weather codes from Open-Meteo and normalize them:
 - Fetch weather every 15 minutes.
 - Recalculate day part every minute.
 - Switch only when the calculated scene key changes.
-- Apply a 5–10 minute weather hysteresis so a brief API fluctuation does not repeatedly swap playlists.
+- Apply a 5–10 minute weather hysteresis so a brief API fluctuation does not repeatedly swap wallpaper files.
 - Do not issue duplicate Wallpaper Engine commands.
 - Log scene changes without logging credentials.
 - Provide a manual scene lock in settings.
-- Provide a “test scene” action for every mapped playlist.
+- Provide a “test scene” action for every mapped wallpaper file.
 
 ## 5.5 Wallpaper Engine command
 
-Wallpaper Engine supports named playlist control:
+Wallpaper Engine supports rendering a specific file in a named window:
 
 ```powershell
-wallpaper64.exe -control openPlaylist -playlist "AG Rain Night" -monitor 0
+wallpaper64.exe -control openWallpaper -file "C:\path\to\project.json" -playInWindow "Ambient Glass Background" -width 1600 -height 900 -x 100 -y 100 -borderless
 ```
 
 Implement this as a narrow Rust command rather than exposing an unrestricted shell to the webview.
@@ -398,11 +378,14 @@ Implement this as a narrow Rust command rather than exposing an unrestricted she
 The Rust command must:
 
 1. Resolve the configured Wallpaper Engine executable.
-2. Validate that the requested playlist is one of the configured values.
+2. Validate that the requested wallpaper file is the configured default or an allowlisted scene override and has a supported file type.
 3. Pass each command argument separately to `std::process::Command`.
 4. Never concatenate untrusted input into a shell string.
-5. Return structured success/error data.
-6. Work as a no-op mock on non-Windows development systems.
+5. Open the file only with `openWallpaper` and `playInWindow`; never call `openPlaylist` or pass a desktop `monitor` target.
+6. Align the named surface to the Tauri client area and keep it visually behind the main app through move, resize, focus, hide, minimize, restore, and close transitions.
+7. Close the named surface when Ambient Glass exits.
+8. Return structured success/error data.
+9. Work as a no-op mock on non-Windows development systems.
 
 Suggested auto-detection order:
 
@@ -424,11 +407,11 @@ Do not redistribute downloaded Workshop files. For a public video or LinkedIn po
 
 # 6. Liquid Glass visual system
 
-The application should evoke Liquid Glass without pretending that a one-hour web overlay can perform full optical refraction of another application’s pixels.
+The application should evoke Liquid Glass without pretending that a web UI can perform full optical refraction of Wallpaper Engine's separate render surface.
 
 ## 6.1 Rendering constraint
 
-Wallpaper Engine and the Tauri webview are separate rendering surfaces. CSS `backdrop-filter` must be treated as progressive enhancement, not as the foundation of the design. It may not reliably sample or blur external desktop pixels through every WebView2/Windows composition path.
+Wallpaper Engine's in-window surface and the Tauri webview remain separate rendering surfaces even though they are visually coupled inside the application. CSS `backdrop-filter` must be treated as progressive enhancement, not as the foundation of the design. It may not reliably sample or blur Wallpaper Engine pixels through every WebView2/Windows composition path.
 
 The P0 design should look excellent using:
 
@@ -487,7 +470,7 @@ Wallpaper brightness varies. Add a scene-level contrast profile:
 type ContrastProfile = "light-scene" | "dark-scene" | "mixed-scene";
 ```
 
-Each playlist mapping may specify a preferred profile.
+Each scene-file mapping may specify a preferred profile.
 
 - `dark-scene`: lighter glass and white text.
 - `light-scene`: darker glass and dark or high-shadow text.
@@ -599,7 +582,7 @@ Recommended mock dimensions:
 The primary mock should show:
 
 - A representative Wallpaper Engine-style background.
-- The overlay in its fully revealed `glance` state.
+- The information layer in its fully revealed `glance` state.
 - The intended time, weather, event, tasks/GitHub, and sports composition.
 - Exact desired spacing, radii, transparency, edge highlights, and typography character.
 - No browser chrome, taskbar, desktop icons, or visible application frame.
@@ -631,9 +614,10 @@ Preview routes or query parameters:
 
 In preview mode:
 
-- Render a local test background beneath the overlay.
+- Render a local test background beneath the information layer.
 - Allow deterministic time, weather, provider data, and presence.
 - Never invoke Wallpaper Engine.
+- Require no provider credentials or Windows-only APIs.
 - Make Playwright screenshots deterministic.
 - Provide an unobtrusive debug panel opened by a shortcut rather than visible in normal screenshots.
 
@@ -666,15 +650,15 @@ Use current stable versions at implementation time. Do not pin invented or stale
 ## 8.2 Layering
 
 ```text
-Windows Desktop
-└── Wallpaper Engine animated wallpaper
-    └── Transparent full-screen Tauri window
-        ├── optional black sleep cover
-        ├── subtle scene vignette
-        ├── Liquid Glass islands
-        ├── content modules
-        ├── celebration layer
-        └── hidden settings/debug surfaces
+Conventional Tauri application window
+├── Wallpaper Engine named in-window background surface
+└── Tauri webview information layer
+    ├── optional black sleep cover
+    ├── subtle scene vignette
+    ├── Liquid Glass islands
+    ├── content modules
+    ├── celebration layer
+    └── hidden settings/debug surfaces
 ```
 
 ## 8.3 Tauri window behavior
@@ -683,8 +667,9 @@ Production window configuration should target a conventional desktop app:
 
 - Standard system title bar with close, minimize, and maximize controls.
 - Visible in the taskbar, resizable, and never always-on-top by default.
-- A calm internal visual scene behind the glass composition; the app does not
-  require a transparent fullscreen overlay to remain useful.
+- A Wallpaper Engine in-window surface or calm internal fallback behind the
+  glass composition; the app does not require a transparent fullscreen desktop
+  overlay to remain useful.
 - Hidden only until initialization is complete, then focused as a normal app.
 - Pointer input remains enabled in every display mode.
 - The user can close the window through the title bar or the Settings “Quit
@@ -1154,20 +1139,21 @@ Settings should be hidden from the ambient composition and opened with `Ctrl+Shi
 
 Onboarding steps:
 
-1. Select display/monitor.
-2. Confirm Wallpaper Engine executable.
-3. Test each configured playlist.
-4. Set location and time zone.
-5. Enable/disable presence detection.
-6. Configure absence and sleep timers.
-7. Add repeating daily tasks.
-8. Add alarms.
-9. Set favorite sports leagues/teams.
-10. Connect GitHub.
-11. Optionally connect Google Calendar.
-12. Optionally configure voice transcription.
-13. Enable launch at startup.
-14. Run a final “display readiness” test.
+1. Select the display for the Ambient Glass app window.
+2. Confirm the Wallpaper Engine executable.
+3. Choose and test a default Wallpaper Engine project/video/web-wallpaper file.
+4. Optionally add per-scene file overrides.
+5. Set location and time zone.
+6. Enable/disable presence detection.
+7. Configure absence and sleep timers.
+8. Add repeating daily tasks.
+9. Add alarms.
+10. Set favorite sports leagues/teams.
+11. Connect GitHub.
+12. Optionally connect Google Calendar.
+13. Optionally configure voice transcription.
+14. Enable launch at startup.
+15. Run a final “display readiness” test.
 
 Settings health panel:
 
@@ -1191,7 +1177,7 @@ No raw stack traces in the ambient UI.
 - Use Tauri Stronghold or a Windows-native secure credential abstraction.
 - Keep provider calls in Rust where practical.
 - Redact authorization headers and secrets from logs.
-- Validate all Wallpaper Engine paths and playlist names.
+- Validate the Wallpaper Engine executable and every configured wallpaper file; never accept playlist names or desktop-monitor targets for in-app playback.
 - Use minimal Tauri capabilities.
 - Do not expose unrestricted shell execution to the frontend.
 - Process webcam frames locally and ephemerally.
@@ -1239,7 +1225,7 @@ Targets, measured with Wallpaper Engine running:
 - App idle CPU should be low enough that fan behavior is acceptable; measure rather than assume a fixed universal percentage.
 - Add a performance debug overlay showing frame time, detection time, polling status, and state transitions.
 
-Wallpaper choice can dominate GPU usage. Prefer efficient video/scene wallpapers and test each playlist on the XPS.
+Wallpaper choice can dominate GPU usage. Prefer efficient video/scene wallpapers and test each configured file on the XPS.
 
 ---
 
@@ -1335,10 +1321,11 @@ Deliver:
 
 Exit criteria:
 
-- Simulated weather selects the expected playlist.
+- Simulated weather selects the expected wallpaper file.
 - Live weather updates UI.
 - Duplicate scene commands are suppressed.
 - Non-Windows development uses a mock adapter.
+- Browser preview remains useful without credentials or Windows-only APIs.
 
 ## Milestone 4 — Local utility layer
 
@@ -1418,8 +1405,8 @@ Exit criteria:
 Deliver:
 
 - Startup behavior.
-- Monitor selection.
-- Fullscreen/transparent/skip-taskbar validation.
+- App-window display selection.
+- Normal title-bar/taskbar behavior, WebView2 transparency, and in-app Wallpaper Engine surface alignment validation.
 - Installer.
 - Logging and diagnostics.
 - Settings backup/export excluding secrets.
@@ -1429,7 +1416,7 @@ Exit criteria:
 
 - Clean install on the Dell.
 - Starts without white-window flash.
-- Wallpaper Engine and overlay recover after restart.
+- Wallpaper Engine's in-app surface and the app window recover after restart without changing the desktop wallpaper.
 - Global emergency hide shortcut works.
 - All P0 acceptance criteria pass on Windows.
 
@@ -1442,7 +1429,7 @@ When the goal is to see something beautiful as quickly as possible, use this ord
 ## Minute 0–10
 
 - Scaffold Tauri + React.
-- Add full-screen transparent window configuration.
+- Add a conventional resizable window, transparent webview layer, and internal preview background.
 - Add preview mode and fixed demo data.
 
 ## Minute 10–25
@@ -1465,8 +1452,8 @@ When the goal is to see something beautiful as quickly as possible, use this ord
 
 ## Minute 50–60
 
-- Invoke Wallpaper Engine’s named playlist command.
-- Run the visual composition over a real selected wallpaper.
+- Invoke Wallpaper Engine’s specific-file in-window command.
+- Run the visual composition over a real selected wallpaper inside the app.
 - Record a short approach/reveal demo or use simulated presence.
 
 Anything beyond this is follow-on work, even if Codex continues autonomously.
@@ -1502,7 +1489,7 @@ Test:
 - Sunrise/sunset day-part boundaries.
 - Time-zone and DST daily reset.
 - Scene hysteresis.
-- Duplicate playlist suppression.
+- Duplicate wallpaper-file command suppression.
 - Display state transitions.
 - Presence rolling window.
 - Task completion and single celebration.
@@ -1549,20 +1536,21 @@ Run on the Dell:
 
 1. Launch Wallpaper Engine.
 2. Launch Ambient Glass.
-3. Confirm no taskbar entry or title bar.
-4. Confirm desktop wallpaper remains visible through transparent regions.
-5. Test every playlist from settings.
-6. Test clear/rain/day/night scene switching.
-7. Grant camera permission and test presence.
-8. Test pointer click-through and interactive mode.
-9. Test emergency hide shortcut.
-10. Test local task persistence.
-11. Test celebration.
-12. Test local reminder and alarm.
-13. Connect each external integration independently.
-14. Restart Windows and test startup.
-15. Observe CPU/GPU/fan behavior for at least 20 minutes.
-16. Disconnect network and confirm graceful fallback.
+3. Confirm Ambient Glass has a normal taskbar entry and working title-bar minimize, maximize, restore, and close controls.
+4. Record the current Windows desktop wallpaper, use **Preview in app** and **Save & show in app**, then confirm the desktop wallpaper is unchanged.
+5. Confirm the configured default wallpaper file is visible behind the UI inside Ambient Glass.
+6. Move and resize the app, then minimize/restore and switch focus; confirm the Wallpaper Engine surface remains aligned behind the client area and does not create a separate taskbar or Alt-Tab entry.
+7. Test every configured per-scene file override and clear/rain/day/night switching.
+8. Confirm all settings and display controls remain clickable while the Wallpaper Engine surface is active.
+9. Hide, reveal, and quit Ambient Glass; confirm its named Wallpaper Engine surface follows those transitions and closes on exit.
+10. Grant camera permission and test presence.
+11. Test keyboard/pointer interaction plus the optional recovery shortcut.
+12. Test local task persistence and celebration.
+13. Test local reminder and alarm.
+14. Connect each external integration independently.
+15. Restart Windows and test startup.
+16. Observe CPU/GPU/fan behavior for at least 20 minutes with the in-app wallpaper running.
+17. Disconnect the network and confirm the calm internal fallback works without credentials.
 
 Do not claim Windows-specific behavior is verified if the implementation was only tested on macOS or in a browser.
 
@@ -1575,8 +1563,9 @@ The build is P0-complete only when all applicable items are checked:
 ## Visual
 
 - [ ] `design/reference/glance.png` is represented closely at the target aspect ratio.
-- [ ] Wallpaper Engine remains the dominant visual element.
-- [ ] Overlay is transparent outside the intended glass surfaces.
+- [ ] Wallpaper Engine remains the dominant visual element inside the app window.
+- [ ] The Windows desktop wallpaper is never changed by Ambient Glass.
+- [ ] The information layer is transparent outside the intended glass surfaces.
 - [ ] Liquid reveal and dismissal are polished and reversible.
 - [ ] No generic grid dashboard is visible.
 - [ ] Text is readable over bright and dark scenes.
@@ -1586,9 +1575,9 @@ The build is P0-complete only when all applicable items are checked:
 ## Automatic behavior
 
 - [ ] Time and weather select a scene key.
-- [ ] Scene key maps to a configurable Wallpaper Engine playlist.
-- [ ] Playlist changes are debounced and not duplicated.
-- [ ] Presence can reveal and dismiss the overlay.
+- [ ] Scene key maps to a configurable Wallpaper Engine file, with a default-file fallback.
+- [ ] Wallpaper-file changes are debounced and not duplicated.
+- [ ] Presence can reveal and dismiss the information layer.
 - [ ] Long absence can enter optional sleep.
 - [ ] The display recovers from sleep or hidden state.
 
@@ -1644,7 +1633,7 @@ The software will look more intentional if the hardware presentation is clean:
 - Use a low, dark laptop stand or a floating shelf.
 - Route the charging cable behind the stand.
 - Disable keyboard backlighting.
-- Hide desktop icons and the Windows taskbar.
+- Keep the Windows desktop visually uncluttered if it remains visible around the app; do not rely on hiding the taskbar as the only way to make the composition feel finished.
 - Consider a reversible matte-black keyboard-deck cover that does not block ventilation or the power button.
 - Keep the screen nearly upright so the keyboard is less prominent from across the room.
 - Do not block the XPS intake or exhaust vents.
@@ -1659,7 +1648,7 @@ Codex can build around missing credentials, but these inputs eventually require 
 - The final UI reference image.
 - The actual display resolution.
 - Wallpaper Engine executable path if auto-detection fails.
-- Playlist names and selected wallpapers.
+- The specific Wallpaper Engine project/video/web-wallpaper file paths to use as the default and any scene overrides.
 - Location and time zone.
 - GitHub username and token.
 - Favorite sports leagues/team IDs.

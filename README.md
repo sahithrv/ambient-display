@@ -14,7 +14,7 @@ The supplied visual source of truth is [design/reference/glance.png](design/refe
 - Local MediaPipe face-detection pipeline with persisted opt-in camera permission, hidden low-resolution stream, one-second sampling, no frame storage or upload.
 - Typed commands and explicit push-to-talk capture. Typed commands always work without credentials.
 - Credential-backed native GitHub, TheSportsDB, optional OpenAI transcription, and optional Google Calendar boundaries. Google uses installed-app PKCE OAuth in the system browser, keeps refresh tokens in the OS credential store, and normalizes only today's display-safe events.
-- A narrow native Wallpaper Engine adapter that validates scene keys, playlist labels, monitor input, and executable layout before invoking only the fixed `openPlaylist` command; settings persist every playlist mapping, manual scene lock, fallback choice, Wallpaper Engine monitor, and app-window display selection.
+- A narrow native Wallpaper Engine adapter that validates scene keys, specific wallpaper files, and executable layout before opening Wallpaper Engine in its named in-window surface behind the app; settings persist a default file, optional per-scene file overrides, manual scene lock, fallback choice, and app-window display selection.
 - Tauri settings persistence, autostart, app-active native alarms, native notification, secure credentials, and Windows source configuration. These native behaviors require the Windows validation pass below.
 
 ## Run it
@@ -73,30 +73,25 @@ npm run tauri build
 
 ### Wallpaper Engine
 
-Create these playlists in Wallpaper Engine (or adapt them in settings):
+Choose a specific Wallpaper Engine project or supported media file for the app background. In Wallpaper Engine, right-click the subscribed wallpaper, choose **Open in Explorer**, and copy the path to its `project.json` or packaged scene file. You can also use a supported video or web-wallpaper entry file. Paste that file path into **In-app wallpaper** in Ambient Glass settings.
 
 ```text
-AG Clear Dawn
-AG Clear Day
-AG Clear Sunset
-AG Clear Night
-AG Cloudy Day
-AG Cloudy Night
-AG Rain Day
-AG Rain Night
-AG Storm
-AG Fog
-AG Snow
-AG Fallback
+project.json
+scene.pkg
+background.mp4
+background.webm
+index.html
 ```
 
-The native adapter maps those values to scene keys and sends only the validated equivalent of:
+Set one default file first. Optional per-scene file overrides let clear, rainy, daytime, and nighttime scene keys select different files. Wallpaper Engine's `openPlaylist` command cannot use `-playInWindow`, so playlist names are intentionally not accepted for this integration.
+
+The native adapter sends only the validated equivalent of:
 
 ```powershell
-wallpaper64.exe -control openPlaylist -playlist "AG Rain Night" -monitor 0
+wallpaper64.exe -control openWallpaper -file "C:\path\to\project.json" -playInWindow "Ambient Glass Background" -width 1600 -height 900 -x 100 -y 100 -borderless
 ```
 
-It never exposes arbitrary shell execution to the webview. On non-Windows hosts it intentionally returns a mock result.
+That render surface is positioned behind and kept aligned with the Ambient Glass client area. It does not replace the Windows desktop wallpaper and does not target a Wallpaper Engine monitor. Closing or hiding Ambient Glass closes or hides the in-app wallpaper surface as well. The adapter never exposes arbitrary shell execution to the webview. On non-Windows hosts it intentionally returns a mock result, while the browser preview uses the bundled internal background without credentials or Windows-only APIs.
 
 ### Weather and presence
 
@@ -127,7 +122,7 @@ Alarms work while Ambient Glass and the computer remain running. In a native bui
 This repository was browser-verified and native-source-checked on macOS. The full native GUI/package could not run here because full Xcode is unavailable, and Windows, Wallpaper Engine, and the Dell hardware are outside this host. Do not treat source or browser evidence as proof of desktop behavior. Perform and record these checks on the Dell:
 
 1. Standard resizable taskbar window, title-bar close/minimize/maximize controls, hidden startup flash prevention, and responsive input in every app mode.
-2. Each Wallpaper Engine playlist test plus clear/rain/day/night automatic switching.
+2. Confirm the configured default wallpaper file renders inside the app, remains aligned through move/resize/minimize/restore, and never changes the Windows desktop background; then test any clear/rain/day/night file overrides.
 3. Webcam permission, local presence reveal/dismiss, keyboard/pointer recovery, `Ctrl+Shift+Space` recovery when available, and long-absence sleep.
 4. Local task persistence, celebration, reminder, alarm, notification, and morning briefing.
 5. Each configured provider independently, including secure token storage and revoked/disconnected behavior. Build with a configured Google Desktop client ID, complete the system-browser OAuth flow, verify today-sync/event creation, then revoke access and verify the local-first fallback.
@@ -139,7 +134,7 @@ The exact current evidence and limits live in [artifacts/verification/p0-checkli
 ## Security notes
 
 - No unrestricted shell, filesystem, process, or opener permissions are granted to the frontend. The sole opener permission is native-only and restricted to Google’s authorization host for Calendar OAuth.
-- Wallpaper Engine input is validated twice and invoked through separated process arguments.
+- Wallpaper Engine executable and wallpaper-file input are validated twice and invoked through separated process arguments; no playlist or monitor targeting is exposed.
 - Camera frames stay local and ephemeral.
 - Ambient Glass no longer installs a Windows session-input poller; the normal app window receives its own keyboard and pointer events directly.
 - Microphone capture happens only while the user explicitly holds the voice control; temporary audio is discarded after the native transcription request.

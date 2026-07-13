@@ -15,6 +15,7 @@ export type WeatherCondition =
   "clear" | "partly-cloudy" | "cloudy" | "rain" | "storm" | "fog" | "snow";
 
 export interface WeatherDisplayData {
+  available?: boolean;
   temperature: number | string;
   condition: string;
   kind?: WeatherCondition;

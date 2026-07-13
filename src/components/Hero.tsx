@@ -3,7 +3,6 @@ import { HeroClock } from "./HeroClock";
 import { WeatherCapsule } from "./WeatherCapsule";
 import type { WeatherDisplayData } from "./types";
 import { GlassIsland } from "./glass/GlassIsland";
-import { LiquidEdge } from "./glass/LiquidEdge";
 
 export interface HeroProps extends HTMLAttributes<HTMLElement> {
   weather?: WeatherDisplayData;
@@ -28,13 +27,12 @@ export function Hero({
   ...props
 }: HeroProps) {
   return (
-    <section {...props} className={`hero ${className}`} aria-label="Current time and weather">
-      <GlassIsland
-        className="hero__clock-island"
-        variant="organic"
-        glow="bright"
-        radius="37% 27% 34% 28% / 29% 41% 37% 43%"
-      >
+    <section
+      {...props}
+      className={`hero${weather?.available === false ? " hero--weather-unavailable" : ""} ${className}`}
+      aria-label="Current time and weather"
+    >
+      <GlassIsland className="hero__clock-island" glow="none" radius="56px">
         <HeroClock
           time={time}
           meridiem={meridiem}
@@ -44,7 +42,6 @@ export function Hero({
           message={message}
         />
       </GlassIsland>
-      <LiquidEdge className="hero__merge-edge" />
       <WeatherCapsule weather={weather} />
     </section>
   );

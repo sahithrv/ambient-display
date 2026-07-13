@@ -10,6 +10,8 @@ use std::{fmt, sync::Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
+use crate::wallpaper::WallpaperEngineController;
+
 const MAIN_WINDOW_LABEL: &str = "main";
 const SHORTCUT_EVENT: &str = "ambient-glass://shortcut";
 
@@ -129,7 +131,7 @@ impl InputActivityMonitor {
     /// Windows input poller just to recover from click-through mode.
     pub fn start(app: AppHandle) -> Result<Self, WindowingError> {
         let _ = app;
-        Ok(Self::default())
+        Ok(Self)
     }
 
     /// Kept idempotent so the native lifecycle remains uniform.
@@ -162,7 +164,10 @@ impl DisplayWindowState {
 
         state.ready = true;
         state.visible = true;
-        Ok(as_result(*state))
+        let result = as_result(*state);
+        drop(state);
+        app.state::<WallpaperEngineController>().sync_with_app(app);
+        Ok(result)
     }
 
     pub fn set_mode(
@@ -188,7 +193,10 @@ impl DisplayWindowState {
         let mut state = self.lock()?;
         state.mode = mode;
         state.visible = window.is_visible().unwrap_or(state.visible);
-        Ok(as_result(*state))
+        let result = as_result(*state);
+        drop(state);
+        app.state::<WallpaperEngineController>().sync_with_app(app);
+        Ok(result)
     }
 
     pub fn snapshot(&self) -> Result<WindowCommandResult, WindowingError> {
@@ -271,6 +279,7 @@ impl DisplayWindowState {
         }
 
         self.lock()?.selected_monitor_index = Some(monitor_index);
+        app.state::<WallpaperEngineController>().sync_with_app(app);
         self.monitor_status(app)
     }
 
@@ -451,7 +460,10 @@ fn toggle_main_window_visibility(app: &AppHandle) -> Result<WindowCommandResult,
 
     state.ready = true;
     state.visible = !visible;
-    Ok(as_result(*state))
+    let result = as_result(*state);
+    drop(state);
+    app.state::<WallpaperEngineController>().sync_with_app(app);
+    Ok(result)
 }
 
 fn reveal_main_window(
@@ -479,8 +491,11 @@ fn reveal_main_window(
     window
         .show()
         .map_err(|_| native_error("The app window could not be shown."))?;
-    app.state::<DisplayWindowState>()
-        .note_shortcut_visibility(true)
+    let result = app
+        .state::<DisplayWindowState>()
+        .note_shortcut_visibility(true)?;
+    app.state::<WallpaperEngineController>().sync_with_app(app);
+    Ok(result)
 }
 
 fn main_window(app: &AppHandle) -> Result<WebviewWindow, WindowingError> {

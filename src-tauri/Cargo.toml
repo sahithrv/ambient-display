@@ -40,6 +40,7 @@ time = "=0.3.41"
 # Registry discovery is compiled only for the actual Wallpaper Engine platform.
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.56"
+windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
