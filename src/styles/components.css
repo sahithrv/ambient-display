@@ -34,10 +34,11 @@
   z-index: -3;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 46% 64% at 12% 11%, rgba(189, 174, 149, 0.21), transparent 62%),
-    radial-gradient(ellipse 54% 70% at 85% 12%, rgba(131, 131, 160, 0.29), transparent 63%),
-    radial-gradient(ellipse 72% 94% at 63% 85%, rgba(9, 19, 39, 0.14), transparent 66%),
-    linear-gradient(116deg, #171e29 0%, #1a2334 28%, #212d48 53%, #111a2a 100%);
+    radial-gradient(ellipse 46% 64% at 12% 11%, rgba(214, 196, 160, 0.24), transparent 62%),
+    radial-gradient(ellipse 58% 72% at 86% 8%, rgba(105, 128, 190, 0.28), transparent 64%),
+    radial-gradient(ellipse 54% 56% at 47% 76%, rgba(56, 85, 148, 0.16), transparent 71%),
+    radial-gradient(ellipse 72% 94% at 63% 85%, rgba(5, 14, 35, 0.24), transparent 66%),
+    linear-gradient(116deg, #111a2a 0%, #18263c 31%, #202f4d 55%, #0c1424 100%);
 }
 
 .ambient-display__preview-scene::before {
@@ -69,6 +70,9 @@
   bottom: -43vh;
   border: 1px solid rgba(177, 204, 255, 0.11);
   border-radius: 50% 45% 0 0;
+  background:
+    radial-gradient(ellipse at 28% 20%, rgba(154, 197, 255, 0.09), transparent 41%),
+    linear-gradient(128deg, transparent 38%, rgba(84, 121, 186, 0.1) 74%, transparent);
   box-shadow:
     -32px -26px 110px rgba(59, 78, 133, 0.15),
     -90px -16px 120px rgba(0, 0, 0, 0.24);
@@ -168,8 +172,9 @@
 
 .hero__clock-island .glass-island__body {
   background:
-    radial-gradient(ellipse 59% 64% at 81% 12%, rgba(184, 212, 255, 0.21), transparent 60%),
-    radial-gradient(ellipse 55% 59% at 10% 110%, rgba(80, 113, 175, 0.26), transparent 72%),
+    radial-gradient(ellipse 59% 64% at 81% 12%, rgba(199, 222, 255, 0.27), transparent 60%),
+    radial-gradient(ellipse 55% 59% at 10% 110%, rgba(83, 125, 201, 0.3), transparent 72%),
+    radial-gradient(ellipse 42% 28% at 47% 0%, rgba(255, 255, 255, 0.1), transparent 76%),
     linear-gradient(
       127deg,
       rgba(68, 86, 118, 0.37),
@@ -242,11 +247,12 @@
 .hero-clock__greeting {
   max-width: 80%;
   margin: clamp(14px, 1.8vh, 23px) 0 0;
-  color: #e9f2ff;
+  color: #f2f7ff;
   font-size: clamp(26px, 2.23vw, 38px);
-  font-weight: 350;
+  font-weight: 390;
   line-height: 1.08;
   letter-spacing: -0.04em;
+  text-shadow: 0 1px 18px rgba(208, 229, 255, 0.12);
 }
 
 .hero-clock__message {
@@ -350,6 +356,18 @@
   height: clamp(224px, 27.8vh, 333px);
   padding: clamp(23px, 2.3vh, 31px) clamp(27px, 2.1vw, 39px);
   border-radius: clamp(33px, 3.2vw, 51px);
+}
+
+.calendar-card .glass-island__body {
+  background:
+    radial-gradient(ellipse 65% 52% at 80% -10%, rgba(166, 204, 255, 0.22), transparent 57%),
+    radial-gradient(ellipse 54% 62% at 0% 100%, rgba(91, 126, 210, 0.18), transparent 67%),
+    linear-gradient(
+      145deg,
+      rgba(61, 82, 124, 0.51),
+      rgba(18, 29, 52, 0.67) 63%,
+      rgba(50, 70, 107, 0.47)
+    );
 }
 
 .calendar-card__header,
@@ -662,6 +680,18 @@
   border-radius: clamp(34px, 3.5vw, 53px);
 }
 
+.focus-card .glass-island__body {
+  background:
+    radial-gradient(ellipse 48% 46% at 100% 0%, rgba(143, 183, 255, 0.19), transparent 59%),
+    radial-gradient(ellipse 46% 58% at 0% 100%, rgba(103, 116, 213, 0.15), transparent 68%),
+    linear-gradient(
+      142deg,
+      rgba(48, 69, 111, 0.53),
+      rgba(16, 27, 50, 0.7) 64%,
+      rgba(40, 61, 100, 0.46)
+    );
+}
+
 .focus-card__header,
 .focus-card__title,
 .focus-card__task,
@@ -831,6 +861,20 @@
   height: clamp(128px, 15.6vh, 187px);
   padding: clamp(17px, 1.7vh, 24px) clamp(24px, 2.2vw, 39px);
   border-radius: clamp(31px, 3.1vw, 49px);
+}
+
+.scores-card .glass-island__body,
+.contributions-card .glass-island__body,
+.alarm-card .glass-island__body {
+  background:
+    radial-gradient(ellipse 46% 78% at 9% 0%, rgba(160, 198, 255, 0.16), transparent 60%),
+    radial-gradient(ellipse 54% 72% at 92% 100%, rgba(92, 133, 228, 0.16), transparent 67%),
+    linear-gradient(
+      137deg,
+      rgba(58, 78, 118, 0.51),
+      rgba(16, 27, 49, 0.68) 62%,
+      rgba(48, 69, 108, 0.48)
+    );
 }
 
 .scores-card__header {

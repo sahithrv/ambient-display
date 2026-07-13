@@ -32,6 +32,13 @@ test("rainy night remains composed at a second 16:10 viewport", async ({ page })
   await capture(page, "rainy-night-glance-1440x900", 1440, 900);
 });
 
+test("refined glass mock is captured at desktop size", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(preview("time=20:18&weather=partly-cloudy"));
+  await expect(page.getByRole("heading", { name: "Good evening, Sahith" })).toBeVisible();
+  await capture(page, "glass-refinement-1440x900", 1440, 900);
+});
+
 test("a short desktop window flows cards without overlap", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 840 });
   await page.goto(preview("time=08:10"));

@@ -4,11 +4,12 @@
   isolation: isolate;
   color: var(--ag-ink);
   overflow: hidden;
-  border: 1px solid rgba(220, 234, 255, 0.16);
+  border: 1px solid rgba(222, 236, 255, 0.2);
   box-shadow:
-    0 18px 44px -20px var(--glass-shadow),
-    0 7px 18px -13px rgba(0, 0, 0, 0.72),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 22px 54px -25px var(--glass-shadow),
+    0 8px 21px -15px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(102, 150, 224, 0.11);
   transform: translateZ(0);
 }
 
@@ -48,6 +49,43 @@
     );
   -webkit-backdrop-filter: blur(var(--glass-blur-progressive)) saturate(132%);
   backdrop-filter: blur(var(--glass-blur-progressive)) saturate(132%);
+}
+
+/* A softly refracted light field makes the material read as a surface instead
+ * of a simple translucent fill. It is static, so it adds depth without a
+ * continuous paint or animation cost. */
+.glass-island::before,
+.glass-capsule::before {
+  position: absolute;
+  z-index: 1;
+  content: "";
+  pointer-events: none;
+  border-radius: inherit;
+  inset: 1px;
+  opacity: 0.48;
+  background:
+    radial-gradient(ellipse 68% 30% at 50% 0%, rgba(234, 246, 255, 0.16), transparent 74%),
+    radial-gradient(circle at 88% 22%, rgba(164, 204, 255, 0.12), transparent 22%),
+    linear-gradient(
+      116deg,
+      rgba(255, 255, 255, 0.07),
+      transparent 23%,
+      transparent 72%,
+      rgba(131, 182, 255, 0.08)
+    );
+  mix-blend-mode: screen;
+}
+
+.glass-island::after,
+.glass-capsule::after {
+  position: absolute;
+  z-index: 1;
+  content: "";
+  pointer-events: none;
+  border: 1px solid rgba(237, 247, 255, 0.12);
+  border-radius: inherit;
+  box-shadow: inset 0 0 18px rgba(178, 209, 255, 0.04);
+  inset: 5px;
 }
 
 .glass-island__edge,
@@ -124,11 +162,16 @@
   opacity: 0.055;
 }
 
+.ambient-display--preview .glass-island::before,
+.ambient-display--preview .glass-capsule::before {
+  opacity: 0.56;
+}
+
 .glass-island--glow-none,
 .glass-capsule--glow-none {
   box-shadow:
-    0 11px 29px -22px rgba(0, 0, 0, 0.52),
-    inset 0 1px 0 rgba(255, 255, 255, 0.13);
+    0 13px 32px -24px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .glass-island--glow-blue,
