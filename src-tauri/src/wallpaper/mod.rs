@@ -16,6 +16,9 @@ use tauri::AppHandle;
 #[cfg(target_os = "windows")]
 use tauri::Manager;
 
+pub mod library;
+pub use library::{WallpaperImportResult, WallpaperLibraryController, WallpaperLibrarySnapshot};
+
 /// The complete set of scene keys. Deserializing this enum rejects unknown
 /// scene names before a command reaches the adapter.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -102,14 +105,17 @@ pub enum CommandError {
     State {
         message: String,
     },
+    Storage {
+        message: String,
+    },
 }
 
 impl fmt::Display for CommandError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Validation { message, .. } | Self::State { message } => {
-                formatter.write_str(message)
-            }
+            Self::Validation { message, .. }
+            | Self::State { message }
+            | Self::Storage { message } => formatter.write_str(message),
             #[cfg(target_os = "windows")]
             Self::Unavailable { message } | Self::Launch { message } => {
                 formatter.write_str(message)
@@ -225,11 +231,15 @@ struct ControllerState {
     background_window: Option<isize>,
 }
 
-/// Shared native state. The mutex only protects a small settings snapshot and
-/// is released before any process launch, so the UI thread is never held while
-/// Wallpaper Engine starts.
+/// Shared native state. Commands run away from the UI thread; a narrow state
+/// lock protects snapshots while an operation lock preserves launch/close
+/// ordering across those workers.
 pub struct WallpaperEngineController {
     state: Mutex<ControllerState>,
+    /// Serializes configure/apply/test/close across IPC worker threads. The
+    /// state mutex alone is intentionally released during process launch, so
+    /// this second lock prevents a late launch from racing past a source close.
+    operation: Mutex<()>,
 }
 
 impl Default for WallpaperEngineController {
@@ -241,6 +251,7 @@ impl Default for WallpaperEngineController {
                 #[cfg(target_os = "windows")]
                 background_window: None,
             }),
+            operation: Mutex::new(()),
         }
     }
 }
@@ -261,6 +272,7 @@ impl WallpaperEngineController {
         &self,
         input: WallpaperSettingsInput,
     ) -> Result<WallpaperEngineStatus, CommandError> {
+        let _operation = self.operation_lock()?;
         let mut state = self.lock()?;
         state.configuration.apply_input(input)?;
         // A changed map must be allowed to apply immediately, even if its scene
@@ -281,6 +293,7 @@ impl WallpaperEngineController {
         scene: SceneKey,
         force: bool,
     ) -> Result<WallpaperOperationResult, CommandError> {
+        let _operation = self.operation_lock()?;
         let (configuration, wallpaper, duplicate) = {
             let mut state = self.lock()?;
             let wallpaper = state.configuration.wallpaper_for(scene)?;
@@ -343,6 +356,7 @@ impl WallpaperEngineController {
     }
 
     pub fn close_in_app(&self) -> Result<(), CommandError> {
+        let _operation = self.operation_lock()?;
         let configuration = {
             let state = self.lock()?;
             state.configuration.clone()
@@ -386,6 +400,12 @@ impl WallpaperEngineController {
 
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, ControllerState>, CommandError> {
         self.state.lock().map_err(|_| CommandError::State {
+            message: "Wallpaper control is temporarily unavailable.".to_owned(),
+        })
+    }
+
+    fn operation_lock(&self) -> Result<std::sync::MutexGuard<'_, ()>, CommandError> {
+        self.operation.lock().map_err(|_| CommandError::State {
             message: "Wallpaper control is temporarily unavailable.".to_owned(),
         })
     }

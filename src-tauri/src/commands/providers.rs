@@ -27,9 +27,12 @@ pub async fn get_github_commits(
 #[tauri::command]
 pub async fn refresh_sports(
     local_day: Option<String>,
+    favorite_team_ids: Option<Vec<String>>,
     providers: State<'_, ProviderService>,
 ) -> Result<SportsRefreshResponse, ProviderError> {
-    providers.refresh_sports(local_day.as_deref()).await
+    providers
+        .refresh_sports(local_day.as_deref(), favorite_team_ids)
+        .await
 }
 
 /// Accepts only a bounded, explicit push-to-talk buffer. It is dropped after

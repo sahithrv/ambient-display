@@ -32,7 +32,17 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:4173 ws://localhost:4173 https://api.open-meteo.com https://api.github.com https://www.thesportsdb.com; img-src 'self' asset: data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' asset:; script-src 'self';"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:4173 ws://localhost:4173 https://api.open-meteo.com https://api.github.com https://www.thesportsdb.com; img-src 'self' asset: http://asset.localhost data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' asset: http://asset.localhost; script-src 'self';",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPLOCALDATA/wallpapers/*/media.jpg",
+          "$APPLOCALDATA/wallpapers/*/media.png",
+          "$APPLOCALDATA/wallpapers/*/media.webp",
+          "$APPLOCALDATA/wallpapers/*/media.mp4",
+          "$APPLOCALDATA/wallpapers/*/media.webm"
+        ]
+      }
     }
   },
   "bundle": {

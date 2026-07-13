@@ -33,7 +33,11 @@ describe("display machine", () => {
     expect(modeAllowsPointerEvents(glance.mode)).toBe(true);
     expect(modeAllowsPointerEvents(interactive.mode)).toBe(true);
     expect(dueDisplayEvent(interactive, 60_010)).toEqual({ type: "INTERACTION_TIMEOUT" });
-    expect(transitionDisplay(interactive, { type: "INTERACTION_TIMEOUT" }, 60_010).mode).toBe(
+    const refreshed = transitionDisplay(interactive, { type: "ENTER_INTERACTIVE" }, 59_000);
+    expect(refreshed.enteredAt).toBe(59_000);
+    expect(dueDisplayEvent(refreshed, 60_010)).toBeUndefined();
+    expect(dueDisplayEvent(refreshed, 119_000)).toEqual({ type: "INTERACTION_TIMEOUT" });
+    expect(transitionDisplay(refreshed, { type: "INTERACTION_TIMEOUT" }, 119_000).mode).toBe(
       "glance",
     );
   });

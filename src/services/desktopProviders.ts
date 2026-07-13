@@ -39,6 +39,7 @@ interface GithubCachePayload {
 
 interface SportsCachePayload {
   localDay: string;
+  favoriteTeamIds?: string[];
   events: SportsEvent[];
 }
 
@@ -49,7 +50,8 @@ export interface CachedProviderData<T> {
 
 const GITHUB_CACHE_KEY = "github.today";
 const SPORTS_CACHE_KEY = "sports.today";
-const MAX_CACHED_SPORTS_EVENTS = 32;
+const MAX_CACHED_SPORTS_EVENTS = 64;
+const MAX_FAVORITE_TEAM_IDS = 8;
 
 /**
  * These caches deliberately retain only normalized, display-safe data. They
@@ -70,12 +72,20 @@ export function readCachedGithubToday(localDay: string): CachedProviderData<GitH
   };
 }
 
-export function readCachedSportsEvents(localDay: string): CachedProviderData<SportsEvent[]> | null {
+export function readCachedSportsEvents(
+  localDay: string,
+  favoriteTeamIds: readonly string[] = [],
+): CachedProviderData<SportsEvent[]> | null {
   if (!isLocalDay(localDay)) {
     return null;
   }
   const cached = readProviderCache(SPORTS_CACHE_KEY, isSportsCachePayload);
-  if (!cached || cached.value.localDay !== localDay) {
+  const requestedIds = normalizeFavoriteTeamIds(favoriteTeamIds);
+  if (
+    !cached ||
+    cached.value.localDay !== localDay ||
+    selectionKey(cached.value.favoriteTeamIds ?? []) !== selectionKey(requestedIds)
+  ) {
     return null;
   }
   const events = normalizeSportsEvents(cached.value.events);
@@ -150,9 +160,14 @@ export class SportsDesktopProvider implements DataProvider<SportsEvent[]> {
   };
   private cached: SportsEvent[] | null = null;
   private cachedAt: string | undefined;
+  private favoriteTeamIds: string[];
 
-  public constructor(private readonly localDay?: string) {
-    const cached = localDay ? readCachedSportsEvents(localDay) : null;
+  public constructor(
+    private readonly localDay?: string,
+    favoriteTeamIds: readonly string[] = [],
+  ) {
+    this.favoriteTeamIds = normalizeFavoriteTeamIds(favoriteTeamIds);
+    const cached = localDay ? readCachedSportsEvents(localDay, this.favoriteTeamIds) : null;
     if (cached) {
       this.cached = cached.value;
       this.cachedAt = cached.savedAt;
@@ -168,12 +183,25 @@ export class SportsDesktopProvider implements DataProvider<SportsEvent[]> {
     return this.cached;
   }
 
-  public async refresh(localDay?: string): Promise<SportsEvent[] | null> {
+  public async refresh(
+    localDay?: string,
+    favoriteTeamIds: readonly string[] = this.favoriteTeamIds,
+  ): Promise<SportsEvent[] | null> {
+    const requestedIds = normalizeFavoriteTeamIds(favoriteTeamIds);
+    if (selectionKey(requestedIds) !== selectionKey(this.favoriteTeamIds)) {
+      this.favoriteTeamIds = requestedIds;
+      this.cached = null;
+      this.cachedAt = undefined;
+    }
     this.status = {
       state: "loading",
       lastUpdated: this.cachedAt,
     };
-    const result = await invokeTauri<SportsNativeResponse>("refresh_sports", { localDay });
+    const invocation = await invokeTauriResult<SportsNativeResponse>("refresh_sports", {
+      localDay,
+      favoriteTeamIds: requestedIds,
+    });
+    const result = invocation.ok ? invocation.value : null;
     const events = result ? normalizeSportsEvents(result.events) : null;
     if (result && events && isLiveProviderMode(result.mode)) {
       this.cached = events;
@@ -183,7 +211,7 @@ export class SportsDesktopProvider implements DataProvider<SportsEvent[]> {
         if (day) {
           writeProviderCache<SportsCachePayload>(
             SPORTS_CACHE_KEY,
-            { localDay: day, events },
+            { localDay: day, favoriteTeamIds: requestedIds, events },
             this.cachedAt,
           );
         }
@@ -196,8 +224,16 @@ export class SportsDesktopProvider implements DataProvider<SportsEvent[]> {
       return events;
     }
     this.status = this.cached
-      ? staleStatus("sports", this.cachedAt)
-      : { state: "needs-auth", message: "Sports provider not connected" };
+      ? {
+          state: "stale",
+          lastUpdated: this.cachedAt,
+          message: invocation.ok
+            ? "TheSportsDB returned invalid events; using cached sports data."
+            : `${invocation.message} Using cached sports data.`,
+        }
+      : invocation.ok
+        ? { state: "needs-auth", message: "Sports provider not connected" }
+        : { state: "error", message: invocation.message };
     return this.cached;
   }
 }
@@ -341,9 +377,25 @@ function isSportsCachePayload(value: unknown): value is SportsCachePayload {
     return false;
   }
   return (
+    (value.favoriteTeamIds === undefined ||
+      (Array.isArray(value.favoriteTeamIds) &&
+        value.favoriteTeamIds.length <= MAX_FAVORITE_TEAM_IDS &&
+        value.favoriteTeamIds.every(isFavoriteTeamId))) &&
     value.events.length <= MAX_CACHED_SPORTS_EVENTS &&
     value.events.every((event) => normalizeSportsEvent(event) !== undefined)
   );
+}
+
+function normalizeFavoriteTeamIds(values: readonly string[]): string[] {
+  return [...new Set(values.filter(isFavoriteTeamId))].slice(0, MAX_FAVORITE_TEAM_IDS).sort();
+}
+
+function isFavoriteTeamId(value: unknown): value is string {
+  return typeof value === "string" && /^\d{1,32}$/.test(value);
+}
+
+function selectionKey(values: readonly string[]): string {
+  return normalizeFavoriteTeamIds(values).join(",");
 }
 
 function normalizeSportsEvents(value: unknown): SportsEvent[] | null {

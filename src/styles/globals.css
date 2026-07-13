@@ -1,6 +1,7 @@
 @import "./tokens.css";
 @import "./glass.css";
 @import "./components.css";
+@import "./wallpaper.css";
 
 :root {
   color: #eaf1ff;

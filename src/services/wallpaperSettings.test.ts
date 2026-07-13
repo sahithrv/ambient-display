@@ -3,11 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultWallpaperSettings,
   deriveWallpaperFallback,
+  reconcileWallpaperSettingsWithLibrary,
   loadWallpaperSettings,
   normalizeWallpaperSettings,
   saveWallpaperSettings,
   validateWallpaperSettings,
+  withImportedWallpapersEnabled,
+  withWallpaperSourceMode,
 } from "./wallpaperSettings";
+
+const firstId = "a".repeat(64);
+const secondId = "b".repeat(64);
 
 function localStorageFixture() {
   const values = new Map<string, string>();
@@ -26,6 +32,7 @@ describe("wallpaper settings", () => {
     const settings = normalizeWallpaperSettings({
       executablePath: "C:\\Steam\\steamapps\\common\\wallpaper_engine\\wallpaper64.exe",
       overlayMonitorIndex: 2,
+      version: 2,
       wallpaperFile: "C:\\Steam\\steamapps\\workshop\\content\\431960\\123456\\project.json",
       wallpaperFiles: {
         "clear.day": "D:\\Wallpapers\\clear.mp4",
@@ -39,13 +46,25 @@ describe("wallpaper settings", () => {
     expect(settings).toMatchObject({
       executablePath: "C:\\Steam\\steamapps\\common\\wallpaper_engine\\wallpaper64.exe",
       overlayMonitorIndex: 2,
-      version: 2,
+      version: 3,
+      sourceMode: "internal",
       sceneLock: { mode: "locked", sceneKey: "clear.day" },
       fallbackMode: "force-internal",
     });
     expect(settings.wallpaperFile).toContain("project.json");
     expect(settings.wallpaperFiles["clear.day"]).toContain("clear.mp4");
     expect(settings.wallpaperFiles["storm.any"]).toBeUndefined();
+  });
+
+  it("migrates v2 fallback and empty setups into explicit v3 sources", () => {
+    expect(
+      normalizeWallpaperSettings({ version: 2, fallbackMode: "force-internal" }),
+    ).toMatchObject({ version: 3, sourceMode: "internal", fallbackMode: "force-internal" });
+    expect(normalizeWallpaperSettings({ version: 2 })).toMatchObject({
+      version: 3,
+      sourceMode: "library",
+      fallbackMode: "automatic",
+    });
   });
 
   it("validates the browser draft before it reaches the native command", () => {
@@ -79,6 +98,7 @@ describe("wallpaper settings", () => {
   it("emits a renderer-safe fallback state without a native error payload", () => {
     const automatic = {
       ...createDefaultWallpaperSettings(),
+      sourceMode: "wallpaper-engine" as const,
       wallpaperFile: "D:\\Wallpapers\\rain.mp4",
     };
     const unavailable = deriveWallpaperFallback(
@@ -99,5 +119,71 @@ describe("wallpaper settings", () => {
     });
     expect(forced.active).toBe(true);
     expect(forced.reason).toBe("Internal fallback selected in settings.");
+  });
+
+  it("normalizes library preferences and reconciles removed assets", () => {
+    const settings = normalizeWallpaperSettings({
+      version: 3,
+      sourceMode: "library",
+      library: {
+        playbackMode: "single",
+        selectedId: firstId,
+        enabledIds: [firstId, firstId, secondId, "unsafe"],
+        shuffleIntervalMinutes: 30,
+      },
+    });
+    expect(settings.library).toEqual({
+      playbackMode: "single",
+      selectedId: firstId,
+      enabledIds: [firstId, secondId],
+      shuffleIntervalMinutes: 30,
+    });
+
+    const reconciled = reconcileWallpaperSettingsWithLibrary(settings, {
+      items: [
+        {
+          id: secondId,
+          displayName: "Second",
+          kind: "image",
+          mimeType: "image/png",
+          sizeBytes: 1,
+          importedAt: "2026-07-12T00:00:00.000Z",
+          filePath: "managed",
+        },
+      ],
+    });
+    expect(reconciled.library.enabledIds).toEqual([secondId]);
+    expect(reconciled.library.selectedId).toBe(secondId);
+  });
+
+  it("keeps source mode and the compatibility fallback flag in sync", () => {
+    const settings = createDefaultWallpaperSettings();
+    expect(withWallpaperSourceMode(settings, "internal")).toMatchObject({
+      sourceMode: "internal",
+      fallbackMode: "force-internal",
+    });
+    expect(withWallpaperSourceMode(settings, "wallpaper-engine")).toMatchObject({
+      sourceMode: "wallpaper-engine",
+      fallbackMode: "automatic",
+    });
+  });
+
+  it("enables successful imports and switches to the local library", () => {
+    const settings = withWallpaperSourceMode(createDefaultWallpaperSettings(), "internal");
+    const imported = withImportedWallpapersEnabled(settings, [firstId, secondId, "unsafe"]);
+    expect(imported).toMatchObject({
+      sourceMode: "library",
+      fallbackMode: "automatic",
+      library: {
+        selectedId: firstId,
+        enabledIds: [firstId, secondId],
+      },
+    });
+  });
+
+  it("uses the internal scene only when a library has no usable media", () => {
+    const settings = createDefaultWallpaperSettings();
+    expect(deriveWallpaperFallback(settings, null, false, false).active).toBe(true);
+    expect(deriveWallpaperFallback(settings, null, false, true).active).toBe(false);
   });
 });

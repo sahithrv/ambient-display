@@ -1,0 +1,462 @@
+.wallpaper-backdrop {
+  position: absolute;
+  z-index: -3;
+  overflow: hidden;
+  pointer-events: none;
+  inset: 0;
+  background: #0b1423;
+}
+
+.wallpaper-backdrop__fallback,
+.wallpaper-backdrop__media,
+.wallpaper-backdrop__wash {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  inset: 0;
+}
+
+.wallpaper-backdrop__fallback {
+  background:
+    radial-gradient(circle at 78% 24%, rgba(143, 183, 246, 0.3), transparent 31%),
+    radial-gradient(circle at 23% 12%, rgba(232, 196, 151, 0.2), transparent 28%),
+    linear-gradient(132deg, #111c2d 0%, #21354f 48%, #0b1423 100%);
+}
+
+.wallpaper-backdrop__media {
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.002);
+}
+
+.wallpaper-backdrop__media--incoming {
+  z-index: 1;
+  animation: wallpaper-fade-in var(--wallpaper-transition-ms, 1400ms) var(--ag-ease-soft) both;
+}
+
+.wallpaper-backdrop__media--outgoing {
+  z-index: 0;
+  animation: wallpaper-fade-out var(--wallpaper-transition-ms, 1400ms) var(--ag-ease-soft) both;
+}
+
+.wallpaper-backdrop__wash {
+  z-index: 2;
+  background:
+    linear-gradient(90deg, rgba(1, 5, 12, 0.18), transparent 36%, transparent 78%),
+    linear-gradient(0deg, rgba(2, 7, 16, 0.2), transparent 34%);
+}
+
+.wallpaper-library {
+  display: grid;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 14px;
+  gap: 12px;
+  border: 1px solid rgba(222, 235, 255, 0.14);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 93% -8%, rgba(123, 174, 255, 0.16), transparent 34%),
+    linear-gradient(145deg, rgba(20, 33, 55, 0.54), rgba(6, 13, 26, 0.34));
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.08),
+    0 18px 44px rgba(1, 5, 13, 0.15);
+}
+
+.wallpaper-library__header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wallpaper-library__header > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.wallpaper-library__header .app-settings__eyebrow {
+  margin: 0;
+}
+
+.wallpaper-library__header h3 {
+  margin: 0;
+  color: #f6f9ff;
+  font-size: clamp(14px, 1.1vw, 17px);
+  font-weight: 570;
+  letter-spacing: -0.025em;
+}
+
+.wallpaper-library__header p:last-child {
+  max-width: 560px;
+  margin: 0;
+  color: var(--ag-ink-faint);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.wallpaper-library__header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.wallpaper-library__header-actions .glass-action {
+  min-height: 32px;
+  padding: 7px 11px;
+  font-size: 10px;
+}
+
+.wallpaper-library__source,
+.wallpaper-library__mode {
+  display: grid;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid rgba(222, 235, 255, 0.1);
+  border-radius: 11px;
+  background: rgba(2, 8, 18, 0.32);
+}
+
+.wallpaper-library__source {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wallpaper-library__mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wallpaper-library__source button,
+.wallpaper-library__mode button {
+  min-height: 31px;
+  padding: 6px 9px;
+  cursor: pointer;
+  color: var(--ag-ink-faint);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 10px;
+  transition:
+    color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.wallpaper-library__source button:hover,
+.wallpaper-library__mode button:hover {
+  color: var(--ag-ink);
+  background: rgba(207, 226, 255, 0.06);
+}
+
+.wallpaper-library button:disabled,
+.wallpaper-library input:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.wallpaper-library__preview:disabled img,
+.wallpaper-library__preview:disabled video {
+  filter: saturate(0.72) brightness(0.8);
+}
+
+.wallpaper-library__source button.is-active,
+.wallpaper-library__mode button.is-active {
+  color: #f7faff;
+  background:
+    linear-gradient(180deg, rgba(212, 231, 255, 0.16), rgba(121, 169, 238, 0.09)),
+    rgba(24, 43, 72, 0.58);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.15),
+    0 4px 14px rgba(4, 11, 24, 0.2);
+}
+
+.wallpaper-library__playback {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wallpaper-library__playback > label {
+  display: grid;
+  width: min(160px, 38%);
+  gap: 4px;
+  color: var(--ag-ink-muted);
+  font-size: 10px;
+}
+
+.wallpaper-library__playback select {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  color: var(--ag-ink);
+  border: 1px solid rgba(222, 235, 255, 0.14);
+  border-radius: 9px;
+  outline: 0;
+  background: rgba(2, 8, 18, 0.47);
+  font-size: 11px;
+}
+
+.wallpaper-library__playback select:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.wallpaper-library__grid {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wallpaper-library__item {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(222, 235, 255, 0.1);
+  border-radius: 13px;
+  background: rgba(2, 8, 18, 0.26);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.wallpaper-library__item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(205, 225, 255, 0.2);
+}
+
+.wallpaper-library__item.is-active {
+  border-color: rgba(168, 207, 255, 0.54);
+  box-shadow:
+    0 0 0 1px rgba(132, 187, 255, 0.12),
+    0 12px 28px rgba(3, 9, 21, 0.25);
+}
+
+.wallpaper-library__preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  border: 0;
+  aspect-ratio: 16 / 9;
+  background: #0d1728;
+}
+
+.wallpaper-library__preview img,
+.wallpaper-library__preview video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition:
+    filter 220ms ease,
+    transform 500ms var(--ag-ease-soft);
+}
+
+.wallpaper-library__preview:hover img,
+.wallpaper-library__preview:hover video {
+  filter: brightness(1.07) saturate(1.04);
+  transform: scale(1.025);
+}
+
+.wallpaper-library__kind,
+.wallpaper-library__active {
+  position: absolute;
+  padding: 4px 6px;
+  color: rgba(247, 250, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(2, 8, 18, 0.54);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  font-size: 8px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.wallpaper-library__kind {
+  top: 7px;
+  right: 7px;
+}
+
+.wallpaper-library__active {
+  bottom: 7px;
+  left: 7px;
+  color: #e9f6ff;
+  border-color: rgba(169, 216, 255, 0.24);
+  background: rgba(30, 88, 139, 0.54);
+  text-transform: none;
+}
+
+.wallpaper-library__item-copy {
+  display: flex;
+  min-width: 0;
+  padding: 9px 9px 4px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wallpaper-library__item-copy strong {
+  overflow: hidden;
+  color: var(--ag-ink);
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallpaper-library__item-copy span {
+  flex: 0 0 auto;
+  color: var(--ag-ink-faint);
+  font-size: 8px;
+}
+
+.wallpaper-library__item-actions {
+  display: flex;
+  min-height: 34px;
+  padding: 4px 9px 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wallpaper-library__item-actions label {
+  display: inline-flex;
+  cursor: pointer;
+  align-items: center;
+  gap: 5px;
+  color: var(--ag-ink-muted);
+  font-size: 9px;
+}
+
+.wallpaper-library__item-actions input {
+  accent-color: #91c4ff;
+}
+
+.wallpaper-library__item-actions button {
+  padding: 2px 0;
+  cursor: pointer;
+  color: rgba(230, 237, 248, 0.48);
+  border: 0;
+  background: transparent;
+  font-size: 9px;
+}
+
+.wallpaper-library__item-actions button:hover {
+  color: #ffd4d4;
+}
+
+.wallpaper-library__empty {
+  display: grid;
+  min-height: 145px;
+  padding: 24px;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  border: 1px dashed rgba(215, 231, 255, 0.15);
+  border-radius: 14px;
+  color: var(--ag-ink-faint);
+  background: rgba(2, 8, 18, 0.15);
+  text-align: center;
+}
+
+.wallpaper-library__empty strong {
+  color: var(--ag-ink-muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.wallpaper-library__empty span {
+  font-size: 10px;
+}
+
+.wallpaper-library__footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--ag-ink-faint);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.wallpaper-library__footer span:last-child {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes wallpaper-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(1.015);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.002);
+  }
+}
+
+@keyframes wallpaper-fade-out {
+  from {
+    opacity: 1;
+    transform: scale(1.002);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.995);
+  }
+}
+
+@media (max-width: 760px) {
+  .wallpaper-library__header,
+  .wallpaper-library__playback,
+  .wallpaper-library__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .wallpaper-library__header-actions {
+    justify-content: flex-start;
+  }
+
+  .wallpaper-library__playback > label {
+    width: 100%;
+  }
+
+  .wallpaper-library__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wallpaper-library__footer span:last-child {
+    text-align: left;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 480px) {
+  .wallpaper-library__source,
+  .wallpaper-library__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wallpaper-backdrop__media,
+  .wallpaper-library__item,
+  .wallpaper-library__preview img,
+  .wallpaper-library__preview video {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

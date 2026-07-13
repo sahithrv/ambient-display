@@ -1,5 +1,5 @@
-import type { HTMLAttributes } from "react";
-import { AlarmCard, AlarmView } from "./AlarmCard";
+import type { HTMLAttributes, ReactNode } from "react";
+import { AlarmView } from "./AlarmCard";
 import { CalendarCard } from "./CalendarCard";
 import { CelebrationBanner } from "./CelebrationBanner";
 import { ContributionsHeatmap } from "./ContributionsHeatmap";
@@ -26,6 +26,7 @@ export interface AmbientDisplayProps extends HTMLAttributes<HTMLElement> {
   mode?: DisplayMode;
   contrast?: ContrastProfile;
   previewBackground?: boolean;
+  backdrop?: ReactNode;
   hero?: {
     time?: string;
     meridiem?: string;
@@ -52,6 +53,8 @@ export interface AmbientDisplayProps extends HTMLAttributes<HTMLElement> {
   };
   tasks?: TaskDisplay[];
   scores?: ScoreDisplay[];
+  /** One calm glance surface rotates at a time instead of forming a dashboard grid. */
+  primarySurface?: "calendar" | "tasks" | "github" | "clean";
   alarm?: AlarmDisplayData;
   celebration?: { visible?: boolean; title?: string; message?: string };
   voice?: VoiceOrbProps;
@@ -62,7 +65,6 @@ export interface AmbientDisplayProps extends HTMLAttributes<HTMLElement> {
     onSettings?: () => void;
   };
   onToggleTask?: (taskId: string, nextCompleted: boolean) => void;
-  onAlarmEnabledChange?: (enabled: boolean) => void;
   onSnoozeAlarm?: () => void;
   onDismissAlarm?: () => void;
   onDismissCelebration?: () => void;
@@ -78,18 +80,19 @@ export function AmbientDisplay({
   mode = "glance",
   contrast = "dark-scene",
   previewBackground = false,
+  backdrop,
   hero,
   weather,
   calendar,
   contributions,
   tasks,
   scores,
+  primarySurface = "calendar",
   alarm,
   celebration,
   voice,
   controls,
   onToggleTask,
-  onAlarmEnabledChange,
   onSnoozeAlarm,
   onDismissAlarm,
   onDismissCelebration,
@@ -98,10 +101,10 @@ export function AmbientDisplay({
   className = "",
   ...props
 }: AmbientDisplayProps) {
-  const visible = ["awakening", "glance", "interactive", "celebration", "settings"].includes(mode);
+  const visible = ["awakening", "glance", "interactive", "celebration"].includes(mode);
   const isInteractive = mode === "interactive";
   const celebrationVisible = mode === "celebration" || Boolean(celebration?.visible);
-  const sparse = !contributions && !scores?.length && !alarm;
+  const showSupportingContent = !celebrationVisible;
 
   return (
     <main
@@ -111,20 +114,31 @@ export function AmbientDisplay({
       } ${className}`}
       aria-label="Ambient Glass display"
     >
+      {backdrop}
       {previewBackground ? (
         <div className="ambient-display__preview-scene" aria-hidden="true" />
       ) : null}
       <div className="ambient-display__vignette" aria-hidden="true" />
       {visible ? (
         <div
-          className={`ambient-display__islands${sparse ? " ambient-display__islands--sparse" : ""}`}
+          className={`ambient-display__islands ambient-display__islands--primary-${primarySurface}`}
         >
           <Hero {...hero} weather={weather} />
-          <CalendarCard {...calendar} />
-          {contributions ? <ContributionsHeatmap {...contributions} /> : null}
-          <FocusTasks tasks={tasks} interactive={isInteractive} onToggleTask={onToggleTask} />
-          <LiveScores scores={scores} />
-          {alarm ? <AlarmCard alarm={alarm} onEnabledChange={onAlarmEnabledChange} /> : null}
+          {showSupportingContent && primarySurface !== "clean" ? (
+            <div
+              className={`ambient-display__primary ambient-display__primary--${primarySurface}`}
+              aria-live="polite"
+            >
+              {primarySurface === "calendar" ? <CalendarCard {...calendar} /> : null}
+              {primarySurface === "github" && contributions ? (
+                <ContributionsHeatmap {...contributions} />
+              ) : null}
+              {primarySurface === "tasks" ? (
+                <FocusTasks tasks={tasks} interactive={isInteractive} onToggleTask={onToggleTask} />
+              ) : null}
+            </div>
+          ) : null}
+          {showSupportingContent ? <LiveScores scores={scores} /> : null}
           <CelebrationBanner
             visible={celebrationVisible}
             title={celebration?.title}
@@ -135,6 +149,8 @@ export function AmbientDisplay({
       ) : null}
       {mode !== "sleep" ? (
         <FloatingControls
+          hidden={mode === "settings"}
+          aria-hidden={mode === "settings" || undefined}
           interactive={isInteractive}
           statusVisible={controls?.statusVisible}
           onWake={controls?.onWake}

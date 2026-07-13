@@ -1,7 +1,14 @@
 import { toDate } from "./date";
-import type { SportsEvent, SportsPreferences } from "./types";
+import type { SportsEvent, SportsPreferences, SportsTeamPreference } from "./types";
 
 export type SportsEventGroup = "live" | "upcoming" | "final" | "other";
+
+const NO_SPORTS_PREFERENCES: SportsPreferences = {
+  version: 1,
+  favoriteTeams: [],
+  favoriteLeagues: [],
+  showOnlyFavorites: false,
+};
 
 /** Converts provider-shaped unknown data into the one model the UI understands. */
 export function normalizeSportsEvent(value: unknown): SportsEvent | undefined {
@@ -33,12 +40,15 @@ export function normalizeSportsEvent(value: unknown): SportsEvent | undefined {
   return {
     id,
     sport,
+    leagueId: providerIdValue(record.leagueId),
     league,
     startTime,
+    homeTeamId: providerIdValue(record.homeTeamId),
     homeName,
+    awayTeamId: providerIdValue(record.awayTeamId),
     awayName,
-    homeBadgeUrl: stringValue(record.homeBadgeUrl),
-    awayBadgeUrl: stringValue(record.awayBadgeUrl),
+    homeBadgeUrl: httpsUrlValue(record.homeBadgeUrl),
+    awayBadgeUrl: httpsUrlValue(record.awayBadgeUrl),
     homeScore: finiteNumber(record.homeScore),
     awayScore: finiteNumber(record.awayScore),
     status,
@@ -62,15 +72,33 @@ export function sportsEventGroup(event: SportsEvent): SportsEventGroup {
 
 export function isFavoriteSportsEvent(
   event: SportsEvent,
-  preferences: SportsPreferences = {},
+  preferences: SportsPreferences = NO_SPORTS_PREFERENCES,
 ): boolean {
-  const favoriteTeams = normalizedSet(preferences.favoriteTeams);
   const favoriteLeagues = normalizedSet(preferences.favoriteLeagues);
   return (
-    favoriteTeams.has(normalizeName(event.homeName)) ||
-    favoriteTeams.has(normalizeName(event.awayName)) ||
-    favoriteLeagues.has(normalizeName(event.league))
+    preferences.favoriteTeams.some(
+      (team) =>
+        sportsTeamMatches(team, event.homeTeamId, event.homeName) ||
+        sportsTeamMatches(team, event.awayTeamId, event.awayName),
+    ) || favoriteLeagues.has(normalizeName(event.league))
   );
+}
+
+/**
+ * Applies the user's visibility preference before the calm status ordering.
+ * With no favorites configured it intentionally retains the provider feed.
+ */
+export function selectSportsEvents(
+  events: SportsEvent[],
+  preferences: SportsPreferences = NO_SPORTS_PREFERENCES,
+): SportsEvent[] {
+  const hasFavorites =
+    preferences.favoriteTeams.length > 0 || preferences.favoriteLeagues.length > 0;
+  const visible =
+    preferences.showOnlyFavorites && hasFavorites
+      ? events.filter((event) => isFavoriteSportsEvent(event, preferences))
+      : events;
+  return sortSportsEvents(visible, preferences);
 }
 
 /**
@@ -80,7 +108,7 @@ export function isFavoriteSportsEvent(
  */
 export function sortSportsEvents(
   events: SportsEvent[],
-  preferences: SportsPreferences = {},
+  preferences: SportsPreferences = NO_SPORTS_PREFERENCES,
 ): SportsEvent[] {
   return [...events].sort((left, right) => {
     const groupDifference = groupRank(sportsEventGroup(left)) - groupRank(sportsEventGroup(right));
@@ -89,8 +117,7 @@ export function sortSportsEvents(
     }
 
     const favoriteDifference =
-      Number(isFavoriteSportsEvent(right, preferences)) -
-      Number(isFavoriteSportsEvent(left, preferences));
+      favoriteSportsEventRank(left, preferences) - favoriteSportsEventRank(right, preferences);
     if (favoriteDifference !== 0) {
       return favoriteDifference;
     }
@@ -112,6 +139,36 @@ export function sortSportsEvents(
   });
 }
 
+/** Builds picker choices from already-normalized provider events without another network request. */
+export function sportsTeamsFromEvents(events: SportsEvent[]): SportsTeamPreference[] {
+  const teams = new Map<string, SportsTeamPreference>();
+  for (const event of events) {
+    addSportsTeam(teams, {
+      id: event.awayTeamId,
+      name: event.awayName,
+      league: event.league,
+      sport: event.sport,
+      badgeUrl: event.awayBadgeUrl,
+    });
+    addSportsTeam(teams, {
+      id: event.homeTeamId,
+      name: event.homeName,
+      league: event.league,
+      sport: event.sport,
+      badgeUrl: event.homeBadgeUrl,
+    });
+  }
+  return [...teams.values()].sort(
+    (left, right) =>
+      (left.league ?? "").localeCompare(right.league ?? "") || left.name.localeCompare(right.name),
+  );
+}
+
+/** Only stable numeric IDs are allowed to influence native provider requests. */
+export function favoriteSportsTeamIds(preferences: SportsPreferences): string[] {
+  return [...new Set(preferences.favoriteTeams.map((team) => team.id).filter(isProviderId))];
+}
+
 function groupRank(group: SportsEventGroup): number {
   switch (group) {
     case "live":
@@ -129,6 +186,41 @@ function eventEpoch(event: SportsEvent): number {
   return toDate(event.startTime)?.getTime() ?? Number.MAX_SAFE_INTEGER;
 }
 
+function favoriteSportsEventRank(event: SportsEvent, preferences: SportsPreferences): number {
+  for (const [index, team] of preferences.favoriteTeams.entries()) {
+    if (
+      sportsTeamMatches(team, event.homeTeamId, event.homeName) ||
+      sportsTeamMatches(team, event.awayTeamId, event.awayName)
+    ) {
+      return index;
+    }
+  }
+  const leagueIndex = preferences.favoriteLeagues.findIndex(
+    (league) => normalizeName(league) === normalizeName(event.league),
+  );
+  return leagueIndex === -1
+    ? Number.MAX_SAFE_INTEGER
+    : preferences.favoriteTeams.length + leagueIndex;
+}
+
+function sportsTeamMatches(
+  preference: SportsTeamPreference,
+  eventTeamId: string | undefined,
+  eventTeamName: string,
+): boolean {
+  if (preference.id && eventTeamId) {
+    return preference.id === eventTeamId;
+  }
+  return normalizeName(preference.name) === normalizeName(eventTeamName);
+}
+
+function addSportsTeam(teams: Map<string, SportsTeamPreference>, team: SportsTeamPreference): void {
+  const key = team.id ? `id:${team.id}` : `name:${normalizeName(team.name)}`;
+  if (!teams.has(key)) {
+    teams.set(key, team);
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -137,6 +229,24 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function providerIdValue(value: unknown): string | undefined {
+  const id = stringValue(value);
+  return id && isProviderId(id) ? id : undefined;
+}
+
+function httpsUrlValue(value: unknown): string | undefined {
+  const text = stringValue(value);
+  if (!text || text.length > 2_048) {
+    return undefined;
+  }
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" && !url.username && !url.password ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function finiteNumber(value: unknown): number | undefined {
@@ -153,10 +263,14 @@ function validStatus(value: unknown): SportsEvent["status"] | undefined {
     : undefined;
 }
 
-function normalizedSet(values: string[] | undefined): Set<string> {
-  return new Set((values ?? []).map(normalizeName));
+function normalizedSet(values: string[]): Set<string> {
+  return new Set(values.map(normalizeName));
 }
 
 function normalizeName(value: string): string {
-  return value.trim().toLocaleLowerCase();
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+}
+
+function isProviderId(value: string | undefined): value is string {
+  return typeof value === "string" && /^\d{1,32}$/.test(value);
 }

@@ -157,56 +157,63 @@
 .hero {
   position: absolute;
   z-index: 2;
-  top: clamp(61px, 7.6vh, 100px);
+  top: clamp(58px, 7.2vh, 92px);
   left: var(--ag-safe);
-  width: min(57vw, 1050px);
-  height: clamp(325px, 39.2vh, 470px);
+  width: min(52vw, 960px);
+  height: clamp(320px, 34.5vh, 414px);
 }
 
-.hero__clock-island {
-  position: absolute;
-  z-index: 1;
-  width: 80%;
+.hero__island {
+  width: 100%;
   height: 100%;
 }
 
-.hero__clock-island .glass-island__body {
+.hero__island > .glass-island__content {
+  height: 100%;
+}
+
+.hero__island .glass-island__body {
   background:
-    radial-gradient(ellipse 59% 64% at 81% 12%, rgba(199, 222, 255, 0.27), transparent 60%),
-    radial-gradient(ellipse 55% 59% at 10% 110%, rgba(83, 125, 201, 0.3), transparent 72%),
-    radial-gradient(ellipse 42% 28% at 47% 0%, rgba(255, 255, 255, 0.1), transparent 76%),
+    radial-gradient(ellipse 42% 64% at 82% 12%, rgba(176, 207, 255, 0.2), transparent 68%),
+    radial-gradient(ellipse 60% 65% at 7% 110%, rgba(78, 119, 195, 0.25), transparent 72%),
+    radial-gradient(ellipse 46% 26% at 30% 0%, rgba(255, 255, 255, 0.11), transparent 78%),
     linear-gradient(
-      127deg,
-      rgba(68, 86, 118, 0.37),
-      rgba(13, 22, 40, 0.66) 63%,
-      rgba(42, 59, 97, 0.44)
+      132deg,
+      rgba(58, 75, 106, 0.5),
+      rgba(12, 21, 38, 0.68) 58%,
+      rgba(35, 52, 84, 0.53)
     );
 }
 
-.hero__clock-island .glass-island__reflection {
-  height: 67%;
+.hero__island .glass-island__reflection {
+  height: 50%;
+  opacity: 0.24;
   background:
-    radial-gradient(ellipse 50% 16% at 22% 1%, rgba(249, 252, 255, 0.56), transparent 73%),
+    radial-gradient(ellipse 45% 15% at 20% 1%, rgba(249, 252, 255, 0.48), transparent 74%),
     linear-gradient(
       100deg,
-      rgba(255, 255, 255, 0.2),
+      rgba(255, 255, 255, 0.18),
       transparent 26%,
       transparent 74%,
-      rgba(198, 224, 255, 0.15)
+      rgba(198, 224, 255, 0.12)
     );
 }
 
-.hero__merge-edge {
-  right: 11.5%;
-  bottom: 16%;
-  transform: rotate(11deg);
+.hero__layout {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.68fr) minmax(245px, 0.82fr);
 }
 
 .hero-clock {
   display: flex;
   width: 100%;
   height: 100%;
-  padding: 8% 12% 9% 18%;
+  min-width: 0;
+  padding: clamp(40px, 4.6vh, 59px) clamp(28px, 2.8vw, 50px) clamp(34px, 4vh, 52px)
+    clamp(58px, 5vw, 88px);
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-start;
@@ -216,15 +223,15 @@
   display: flex;
   align-items: baseline;
   gap: clamp(10px, 0.9vw, 18px);
-  min-height: clamp(86px, 10.7vh, 128px);
+  min-height: clamp(83px, 10.3vh, 122px);
 }
 
 .hero-clock__time {
   color: #eff6ff;
-  font-size: clamp(86px, 8.7vw, 143px);
+  font-size: clamp(82px, 7.5vw, 138px);
   font-weight: 250;
   line-height: 0.87;
-  letter-spacing: -0.084em;
+  letter-spacing: -0.078em;
   text-shadow:
     0 0 2px rgba(255, 255, 255, 0.82),
     0 0 19px rgba(194, 220, 255, 0.38);
@@ -245,10 +252,10 @@
 }
 
 .hero-clock__greeting {
-  max-width: 80%;
+  max-width: 100%;
   margin: clamp(14px, 1.8vh, 23px) 0 0;
   color: #f2f7ff;
-  font-size: clamp(26px, 2.23vw, 38px);
+  font-size: clamp(25px, 2vw, 36px);
   font-weight: 390;
   line-height: 1.08;
   letter-spacing: -0.04em;
@@ -264,15 +271,16 @@
 
 /* Weather capsule */
 .weather-capsule {
-  position: absolute;
-  z-index: 3;
-  top: 15.5%;
-  right: 0;
-  width: 38.5%;
-  height: 68%;
+  position: relative;
+  min-width: 0;
 }
 
-.weather-capsule .glass-island__body {
+.weather-capsule:not(.weather-capsule--embedded) {
+  width: min(100%, 390px);
+  min-height: 250px;
+}
+
+.weather-capsule:not(.weather-capsule--embedded) .glass-island__body {
   background:
     radial-gradient(circle at 75% 26%, rgba(177, 211, 255, 0.26), transparent 34%),
     radial-gradient(circle at 14% 89%, rgba(102, 143, 230, 0.22), transparent 61%),
@@ -342,6 +350,79 @@
   border-left: 1px solid rgba(217, 231, 255, 0.18);
 }
 
+.weather-capsule--embedded {
+  display: grid;
+  margin: clamp(34px, 4.7vh, 56px) clamp(30px, 2.8vw, 48px) clamp(34px, 4.7vh, 56px) 0;
+  padding-left: clamp(26px, 2.35vw, 42px);
+  align-content: center;
+  align-items: center;
+  border-left: 1px solid rgba(218, 232, 255, 0.16);
+  grid-template-areas:
+    "reading glyph"
+    "stats stats";
+  grid-template-columns: minmax(90px, 0.78fr) minmax(104px, 1fr);
+  column-gap: clamp(8px, 0.8vw, 14px);
+}
+
+.weather-capsule--embedded::before {
+  position: absolute;
+  width: 1px;
+  height: 42%;
+  content: "";
+  top: 10%;
+  left: -1px;
+  background: linear-gradient(180deg, transparent, rgba(236, 246, 255, 0.52), transparent);
+  box-shadow: 0 0 10px rgba(141, 187, 255, 0.2);
+}
+
+.weather-capsule--embedded .weather-capsule__reading {
+  position: relative;
+  top: auto;
+  left: auto;
+  grid-area: reading;
+}
+
+.weather-capsule--embedded .weather-capsule__temperature {
+  font-size: clamp(39px, 3vw, 57px);
+}
+
+.weather-capsule--embedded .weather-capsule__condition {
+  margin-top: 10px;
+  max-width: 12ch;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.weather-capsule--embedded .weather-capsule__glyph {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 100%;
+  max-width: 155px;
+  justify-self: end;
+  grid-area: glyph;
+  filter: drop-shadow(0 8px 14px rgba(88, 133, 210, 0.16));
+}
+
+.weather-capsule--embedded .weather-capsule__stats {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  margin-top: clamp(12px, 1.5vh, 20px);
+  grid-area: stats;
+}
+
+.weather-capsule--embedded.weather-capsule--unavailable {
+  display: flex;
+  padding-top: clamp(34px, 4vh, 48px);
+  padding-bottom: clamp(34px, 4vh, 48px);
+  align-items: center;
+  align-content: initial;
+  gap: 13px;
+}
+
 /* Calendar */
 .calendar-card,
 .focus-card,
@@ -349,6 +430,42 @@
   position: absolute;
   right: max(var(--ag-safe), 8.2vw);
   width: min(30.5vw, 560px);
+}
+
+/* One primary surface occupies this anchor at a time. Calendar, focus, and
+ * GitHub rotate through it without building a permanent dashboard grid. */
+.ambient-display__primary {
+  position: absolute;
+  z-index: 2;
+  top: clamp(82px, 10.4vh, 128px);
+  right: max(var(--ag-safe), 8.2vw);
+  width: min(28.5vw, 530px);
+}
+
+.ambient-display__primary--calendar {
+  height: clamp(224px, 26vh, 312px);
+}
+
+.ambient-display__primary--tasks {
+  height: clamp(214px, 26.2vh, 314px);
+}
+
+.ambient-display__primary--github {
+  width: min(34vw, 620px);
+  height: clamp(132px, 14.8vh, 177px);
+}
+
+.ambient-display__primary > .calendar-card,
+.ambient-display__primary > .focus-card,
+.ambient-display__primary > .contributions-card {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  height: 100%;
+  animation: primary-surface-arrive 520ms var(--ag-ease-liquid) both;
 }
 
 .calendar-card {
@@ -406,6 +523,14 @@
 
 .calendar-card__range:hover {
   color: var(--ag-ink);
+}
+
+.calendar-card__range--static {
+  cursor: default;
+}
+
+.calendar-card__range--static:hover {
+  color: var(--ag-ink-muted);
 }
 
 .calendar-card__days {
@@ -857,8 +982,8 @@
   position: absolute;
   top: 66.2%;
   left: calc(var(--ag-safe) + 7.5vw);
-  width: min(46.4vw, 852px);
-  height: clamp(128px, 15.6vh, 187px);
+  width: min(43vw, 790px);
+  height: clamp(124px, 14vh, 168px);
   padding: clamp(17px, 1.7vh, 24px) clamp(24px, 2.2vw, 39px);
   border-radius: clamp(31px, 3.1vw, 49px);
 }
@@ -986,11 +1111,30 @@
 
 .score-team-badge__ring {
   position: absolute;
+  z-index: 3;
   width: 72%;
   height: 72%;
   border: 1px solid rgba(255, 255, 255, 0.29);
   border-radius: 49% 52% 45% 55%;
   transform: rotate(-25deg);
+}
+
+.score-team-badge img {
+  position: relative;
+  z-index: 2;
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.32));
+}
+
+.score-team-badge b {
+  position: relative;
+  z-index: 1;
+}
+
+.score-team-badge img + .score-team-badge__fallback {
+  position: absolute;
 }
 
 .score-match__score {
@@ -1386,31 +1530,66 @@
 }
 
 /* Settings and preview controls */
+.ambient-display--mode-settings {
+  overflow: hidden;
+}
+
 .settings-surface {
   position: absolute;
   z-index: 20;
   display: grid;
-  padding: var(--ag-safe);
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(16px, 3.2vmin, 42px);
   place-items: center;
-  background: rgba(4, 9, 18, 0.29);
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 68% 54% at 50% 0%, rgba(104, 145, 211, 0.1), transparent 70%),
+    rgba(3, 8, 17, 0.64);
   inset: 0;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  -webkit-backdrop-filter: blur(8px) saturate(0.82);
+  backdrop-filter: blur(8px) saturate(0.82);
 }
 
 .settings-surface__panel {
-  width: min(92vw, 580px);
-  max-height: min(82vh, 720px);
-  padding: clamp(24px, 3.1vw, 42px);
-  overflow: auto;
+  width: min(100%, 1120px);
+  height: min(90dvh, 900px);
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(222, 236, 255, 0.25);
+  background: rgba(7, 13, 25, 0.84);
+  box-shadow:
+    0 35px 90px -38px rgba(0, 0, 0, 0.92),
+    0 0 28px -20px rgba(148, 192, 255, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.settings-surface__panel > .glass-island__content {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.settings-surface__panel > .glass-island__body {
+  background:
+    radial-gradient(ellipse 68% 42% at 16% 0%, rgba(178, 209, 255, 0.14), transparent 70%),
+    radial-gradient(ellipse 48% 56% at 100% 100%, rgba(74, 109, 177, 0.12), transparent 72%),
+    linear-gradient(145deg, rgba(30, 42, 63, 0.94), rgba(7, 14, 27, 0.96));
 }
 
 .settings-surface__header {
+  position: relative;
+  z-index: 3;
   display: flex;
-  padding-bottom: 24px;
-  align-items: flex-start;
+  min-width: 0;
+  padding: clamp(22px, 2.5vw, 34px) clamp(24px, 3vw, 40px) clamp(18px, 2vw, 27px);
+  align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid rgba(216, 231, 255, 0.17);
+  background: linear-gradient(180deg, rgba(31, 43, 65, 0.44), rgba(11, 19, 34, 0.22));
+  box-shadow: 0 14px 34px -30px rgba(0, 0, 0, 0.9);
 }
 
 .settings-surface__header p,
@@ -1428,18 +1607,51 @@
 
 .settings-surface__header h2 {
   margin-top: 5px;
-  font-size: clamp(23px, 2.1vw, 32px);
-  font-weight: 400;
+  font-size: clamp(24px, 2.1vw, 34px);
+  font-weight: 390;
   letter-spacing: -0.045em;
 }
 
 .settings-surface__close {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
   border: 1px solid rgba(216, 231, 255, 0.16);
   background: rgba(207, 226, 255, 0.08);
 }
 
+.settings-surface__close:focus-visible {
+  color: #fff;
+  border-color: rgba(166, 207, 255, 0.72);
+  outline: 3px solid rgba(111, 164, 255, 0.19);
+  outline-offset: 2px;
+}
+
 .settings-surface__body {
-  padding-top: 7px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 clamp(24px, 3vw, 40px) clamp(28px, 3vw, 42px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(177, 207, 255, 0.44) transparent;
+}
+
+.settings-surface__body:focus-visible {
+  outline: 0;
+}
+
+.settings-surface__body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.settings-surface__body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(177, 207, 255, 0.42);
+  background-clip: padding-box;
 }
 
 .settings-surface__default-content {
@@ -1536,8 +1748,9 @@
 .command-orb {
   position: absolute;
   z-index: 15;
-  right: var(--ag-safe);
+  right: auto;
   bottom: clamp(34px, 4.8vh, 61px);
+  left: max(var(--ag-safe), 7.6vw);
   width: min(50vw, 610px);
   padding: clamp(14px, 1.45vw, 21px);
   overflow: hidden;
@@ -1623,12 +1836,25 @@
 
 .app-settings {
   display: grid;
-  gap: 23px;
+  min-width: 0;
+  align-items: start;
+  gap: clamp(24px, 3vw, 38px);
+  grid-template-columns: minmax(240px, 0.7fr) minmax(480px, 1.55fr);
 }
 
 .app-settings__section {
   display: grid;
+  min-width: 0;
   border-bottom: 1px solid rgba(216, 231, 255, 0.12);
+}
+
+.app-settings__section:first-child {
+  position: sticky;
+  top: 0;
+  padding-right: clamp(20px, 2.4vw, 32px);
+  align-self: start;
+  border-right: 1px solid rgba(216, 231, 255, 0.12);
+  border-bottom: 0;
 }
 
 .app-settings__section:last-child {
@@ -1646,7 +1872,9 @@
 
 .app-settings__status-row {
   display: flex;
-  min-height: 53px;
+  min-height: 50px;
+  padding: 7px 0;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid rgba(216, 231, 255, 0.09);
@@ -1667,11 +1895,10 @@
 }
 
 .app-settings__status-row span {
-  overflow: hidden;
   color: var(--ag-ink-faint);
   font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .app-settings__state {
@@ -1704,7 +1931,7 @@
 
 .app-settings__actions {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px;
+  gap: 10px;
 }
 
 .app-settings__actions .app-settings__eyebrow,
@@ -1718,6 +1945,10 @@
   padding: 7px 9px;
   font-size: 11px;
   line-height: 1.18;
+}
+
+.app-settings__actions > .sports-setup {
+  grid-column: 1 / -1;
 }
 
 .app-settings__notice {
@@ -2338,6 +2569,17 @@
   }
 }
 
+@keyframes primary-surface-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes ambient-sleep-in {
   from {
     opacity: 0;
@@ -2399,10 +2641,10 @@
   }
 }
 
-/* A desktop window can be short even when it is wide. Move to the flow layout
- * before the absolute cards have a chance to overlap, and let the composition
- * scroll inside the app rather than cover the desktop. */
-@media (max-width: 1150px), (max-height: 850px), (max-aspect-ratio: 4 / 3) {
+/* Narrow or portrait windows use a calm vertical flow. Wide short desktop
+ * windows keep the compact absolute composition so every glance surface stays
+ * inside the viewport instead of creating a dashboard-like scroll stack. */
+@media (max-width: 1150px), (max-aspect-ratio: 4 / 3) {
   .ambient-display {
     min-height: 100svh;
     overflow: auto;
@@ -2410,57 +2652,59 @@
 
   .ambient-display__islands {
     position: relative;
-    display: grid;
+    display: flex;
+    min-height: 100svh;
     padding: 94px 24px 120px;
+    flex-direction: column;
+    align-items: stretch;
     gap: 18px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hero,
-  .calendar-card,
-  .contributions-card,
-  .focus-card,
+  .ambient-display__primary,
   .scores-card,
-  .alarm-card,
   .celebration-banner {
     position: relative;
     top: auto;
     right: auto;
     bottom: auto;
     left: auto;
-    width: auto;
-    max-width: none;
     transform: none;
   }
 
   .hero {
     width: 100%;
     height: 350px;
-    grid-column: 1 / -1;
   }
 
-  .contributions-card,
-  .scores-card,
-  .celebration-banner {
-    grid-column: 1 / -1;
-  }
-  .calendar-card,
-  .focus-card,
-  .alarm-card {
+  .ambient-display__primary {
+    width: min(100%, 620px);
     height: auto;
     min-height: 235px;
+    align-self: flex-end;
   }
-  .contributions-card {
-    height: 145px;
-  }
-  .scores-card {
-    height: 155px;
-  }
-  .alarm-card {
+
+  .ambient-display__primary--github {
     min-height: 145px;
   }
+
+  .ambient-display__primary > .calendar-card,
+  .ambient-display__primary > .focus-card,
+  .ambient-display__primary > .contributions-card {
+    height: auto;
+    min-height: inherit;
+  }
+
+  .scores-card {
+    width: min(100%, 790px);
+    height: 155px;
+    align-self: flex-start;
+  }
+
   .celebration-banner {
+    width: min(100%, 900px);
     height: 93px;
+    align-self: center;
   }
   .floating-controls__orb--music,
   .floating-controls__orb--settings {
@@ -2493,25 +2737,42 @@
     flex-direction: column;
   }
   .hero {
-    height: 315px;
+    height: 390px;
   }
-  .hero__clock-island {
-    width: 86%;
-  }
-  .weather-capsule {
-    top: 27%;
-    width: 39%;
-    height: 58%;
+  .hero__layout {
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
   }
   .hero-clock {
-    padding: 21% 9% 10% 12%;
+    height: auto;
+    padding: 38px 28px 15px;
   }
   .hero-clock__time {
     font-size: clamp(65px, 19vw, 100px);
   }
   .hero-clock__greeting {
-    max-width: 77%;
+    max-width: 100%;
     font-size: 25px;
+  }
+  .weather-capsule--embedded {
+    margin: 0 28px 25px;
+    padding: 18px 0 0;
+    border-top: 1px solid rgba(218, 232, 255, 0.16);
+    border-left: 0;
+    grid-template-columns: minmax(80px, 0.7fr) minmax(90px, 1fr);
+  }
+  .weather-capsule--embedded::before {
+    width: 42%;
+    height: 1px;
+    top: -1px;
+    left: 8%;
+    background: linear-gradient(90deg, transparent, rgba(236, 246, 255, 0.52), transparent);
+  }
+  .weather-capsule--embedded .weather-capsule__glyph {
+    max-width: 115px;
+  }
+  .weather-capsule--embedded .weather-capsule__stats {
+    margin-top: 8px;
   }
   .calendar-card,
   .focus-card,
@@ -2591,6 +2852,7 @@
   .ambient-display--mode-awakening .focus-card,
   .ambient-display--mode-awakening .scores-card,
   .ambient-display--mode-awakening .alarm-card,
+  .ambient-display__primary > .glass-island,
   .celebration-banner__particles i {
     animation: none;
   }
@@ -2605,8 +2867,6 @@
     linear-gradient(0deg, rgba(2, 6, 14, 0.23), transparent 34%);
 }
 
-.hero__clock-island .glass-island__body,
-.weather-capsule .glass-island__body,
 .calendar-card .glass-island__body,
 .focus-card .glass-island__body,
 .scores-card .glass-island__body,
@@ -2615,12 +2875,6 @@
   background:
     radial-gradient(ellipse 78% 52% at 18% 0%, rgba(218, 232, 255, 0.1), transparent 67%),
     linear-gradient(138deg, rgba(42, 53, 73, 0.54), rgba(10, 18, 32, 0.7));
-}
-
-.hero__clock-island .glass-island__reflection {
-  height: 42%;
-  opacity: 0.17;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 86%);
 }
 
 .calendar-card,
@@ -2760,13 +3014,13 @@
     height: clamp(310px, 35vh, 390px);
   }
 
-  .ambient-display__islands--sparse .hero__clock-island {
-    width: 73%;
-    height: 100%;
+  .ambient-display__islands--sparse .hero__layout {
+    grid-template-columns: minmax(0, 1.62fr) minmax(225px, 0.78fr);
   }
 
   .ambient-display__islands--sparse .hero-clock {
-    padding: 10% 10% 9% 12%;
+    padding: clamp(38px, 4.3vh, 52px) clamp(27px, 2.6vw, 42px) clamp(30px, 3.6vh, 44px)
+      clamp(46px, 4vw, 66px);
   }
 
   .ambient-display__islands--sparse .hero-clock__time {
@@ -2778,16 +3032,9 @@
     font-size: clamp(25px, 1.9vw, 34px);
   }
 
-  .ambient-display__islands--sparse .weather-capsule {
-    top: 22%;
-    right: 0;
-    width: 31%;
-    height: 57%;
-  }
-
-  .ambient-display__islands--sparse .weather-capsule--unavailable {
-    top: 23%;
-    height: 106px;
+  .ambient-display__islands--sparse .weather-capsule--embedded {
+    margin: clamp(30px, 4vh, 44px) clamp(27px, 2.4vw, 38px) clamp(30px, 4vh, 44px) 0;
+    padding-left: clamp(23px, 2vw, 32px);
   }
 
   .ambient-display__islands--sparse .calendar-card {
@@ -2824,5 +3071,98 @@
 
   .weather-capsule__unavailable-copy strong {
     white-space: normal;
+  }
+}
+
+@media (max-width: 1100px), (max-height: 760px) {
+  .settings-surface {
+    padding: 14px;
+  }
+
+  .settings-surface__panel {
+    width: 100%;
+    height: calc(100dvh - 28px);
+  }
+
+  .settings-surface__header {
+    padding: 19px 26px 17px;
+  }
+
+  .settings-surface__body {
+    padding-right: 26px;
+    padding-bottom: 28px;
+    padding-left: 26px;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-settings {
+    gap: 22px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-settings__section:first-child {
+    position: relative;
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px solid rgba(216, 231, 255, 0.12);
+  }
+}
+
+@media (max-width: 700px) {
+  .settings-surface {
+    padding: 8px;
+  }
+
+  .settings-surface__panel {
+    height: calc(100dvh - 16px);
+  }
+
+  .settings-surface__header {
+    padding: 17px 18px 15px;
+  }
+
+  .settings-surface__header p {
+    font-size: 10px;
+  }
+
+  .settings-surface__header h2 {
+    font-size: 24px;
+  }
+
+  .settings-surface__body {
+    padding-right: 18px;
+    padding-bottom: 22px;
+    padding-left: 18px;
+  }
+
+  .app-settings__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .routine-setup-form {
+    grid-template-columns: minmax(0, 1fr) minmax(90px, 0.48fr);
+  }
+
+  .routine-setup-form__title,
+  .routine-setup-form .glass-action {
+    grid-column: 1 / -1;
+  }
+
+  .routine-setup-form .glass-action {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-settings__actions,
+  .routine-setup-form,
+  .provider-secret-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .provider-secret-form .glass-action,
+  .provider-secret-form__disconnect {
+    justify-self: start;
   }
 }

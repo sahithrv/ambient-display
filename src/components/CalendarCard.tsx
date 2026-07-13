@@ -10,6 +10,7 @@ export interface CalendarCardProps extends HTMLAttributes<HTMLElement> {
   /** `null` renders an honest empty-day state instead of a placeholder event. */
   event?: CalendarEventDisplay | null;
   onOpen?: () => void;
+  onEventMore?: (event: CalendarEventDisplay) => void;
 }
 
 export function CalendarCard({
@@ -18,6 +19,7 @@ export function CalendarCard({
   days = [],
   event = null,
   onOpen,
+  onEventMore,
   className = "",
   ...props
 }: CalendarCardProps) {
@@ -33,15 +35,21 @@ export function CalendarCard({
           <Icon name="calendar" size={23} />
           <span>{title}</span>
         </div>
-        <button
-          type="button"
-          className="calendar-card__range"
-          onClick={onOpen}
-          aria-label="Open calendar"
-        >
-          <span>{dateRange}</span>
-          <Icon name="chevron-right" size={20} />
-        </button>
+        {onOpen ? (
+          <button
+            type="button"
+            className="calendar-card__range"
+            onClick={onOpen}
+            aria-label="Open calendar"
+          >
+            <span>{dateRange}</span>
+            <Icon name="chevron-right" size={20} />
+          </button>
+        ) : (
+          <span className="calendar-card__range calendar-card__range--static">
+            <span>{dateRange}</span>
+          </span>
+        )}
       </header>
       {days.length > 0 ? (
         <div className="calendar-card__days" aria-label="Week dates">
@@ -68,13 +76,16 @@ export function CalendarCard({
             <strong>{event.title}</strong>
             <span>{event.time}</span>
           </div>
-          <button
-            type="button"
-            className="icon-button icon-button--quiet calendar-card__event-more"
-            aria-label={`More options for ${event.title}`}
-          >
-            <Icon name="more" size={20} />
-          </button>
+          {onEventMore ? (
+            <button
+              type="button"
+              className="icon-button icon-button--quiet calendar-card__event-more"
+              aria-label={`More options for ${event.title}`}
+              onClick={() => onEventMore(event)}
+            >
+              <Icon name="more" size={20} />
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="calendar-card__empty">

@@ -3,6 +3,9 @@ import {
   AmbientDisplay,
   GoogleCalendarSetup,
   LocalRoutineSetup,
+  SportsSetup,
+  WallpaperBackdrop,
+  WallpaperLibrary,
   WallpaperSetup,
   type AlarmDisplayData,
   type CalendarDayDisplay,
@@ -36,10 +39,17 @@ import {
   recordInputActivity,
   recordPresenceSample,
   remindersForDate,
+  advanceWallpaperShuffle,
+  createWallpaperShuffleState,
+  favoriteSportsTeamIds,
+  reconcileWallpaperShuffle,
   resolveSceneLock,
+  resolveWallpaperSelection,
+  selectSportsEvents,
   selectWeatherScene,
+  selectWallpaperNow,
   snoozeUntil,
-  sortSportsEvents,
+  sportsTeamsFromEvents,
   transitionDisplay,
   zonedDateTimeToEpoch,
   type AmbientCommand,
@@ -54,6 +64,8 @@ import {
   type SceneLock,
   type ScheduledAlarmOccurrence,
   type SportsEvent,
+  type SportsPreferences,
+  type WallpaperShuffleState,
   type ProviderStatus,
   type Reminder,
   type WeatherSnapshot,
@@ -110,11 +122,13 @@ import {
 import {
   applyWallpaperScene,
   closeInAppWallpaper,
+  configureWallpaperEngine,
   getWallpaperEngineStatus,
   invokeTauri,
   isTauriRuntime,
   listenForNativeShortcuts,
   quitNativeApplication,
+  setDisplayMonitor,
   setNativeWindowMode,
   type NativeShortcutAction,
   type NativeShortcutEvent,
@@ -122,9 +136,37 @@ import {
   type WallpaperSceneResult,
 } from "./services/tauri";
 import { OpenMeteoWeatherProvider } from "./services/weatherProvider";
-import type { WallpaperFallbackState, WeatherLocation } from "./services/types";
+import {
+  createDefaultSportsPreferences,
+  loadSportsPreferences,
+  saveSportsPreferences,
+} from "./services/sportsSettings";
+import {
+  createDefaultWallpaperSettings,
+  deriveWallpaperFallback,
+  loadWallpaperSettings,
+  reconcileWallpaperSettingsWithLibrary,
+  saveWallpaperSettings,
+  withImportedWallpapersEnabled,
+  withWallpaperSourceMode,
+} from "./services/wallpaperSettings";
+import {
+  createPreviewWallpaperLibrary,
+  deleteWallpaperFromLibrary,
+  importPickedWallpaperFiles,
+  loadWallpaperLibrary,
+  revealWallpaperLibrary,
+} from "./services/wallpaperLibrary";
+import type {
+  WallpaperLibraryState,
+  WallpaperPlaybackMode,
+  WallpaperSettings,
+  WallpaperSourceMode,
+  WeatherLocation,
+} from "./services/types";
 
 type PreviewMode = Exclude<DisplayMode, "booting" | "awakening" | "sleep">;
+type PrimaryGlanceSurface = "calendar" | "tasks" | "github" | "clean";
 
 /** Native supplies visibility; browser preview derives it from the current mode. */
 type ShortcutIntent = NativeShortcutEvent;
@@ -161,7 +203,16 @@ interface PreviewConfig {
   offline: boolean;
   debug: boolean;
   reducedMotion: boolean;
+  primarySurface?: PrimaryGlanceSurface;
 }
+
+const PRIMARY_GLANCE_SEQUENCE = ["calendar", "tasks", "github", "clean"] as const;
+const PRIMARY_GLANCE_DURATION_MS: Record<PrimaryGlanceSurface, number> = {
+  calendar: 8_000,
+  tasks: 8_000,
+  github: 6_000,
+  clean: 8_000,
+};
 
 const MODE_VALUES: readonly DisplayMode[] = [
   "booting",
@@ -183,6 +234,12 @@ const PREVIEW_CONFIG = readPreviewConfig();
 export default function App() {
   const [clockNow, setClockNow] = useState(() => PREVIEW_CONFIG.frozenNow ?? new Date());
   const [display, setDisplay] = useState<DisplayState>(() => createInitialDisplay(PREVIEW_CONFIG));
+  const [primaryGlanceSurface, setPrimaryGlanceSurface] = useState<PrimaryGlanceSurface>(
+    PREVIEW_CONFIG.primarySurface ?? "calendar",
+  );
+  const [interactivePrimarySurface, setInteractivePrimarySurface] = useState<PrimaryGlanceSurface>(
+    PREVIEW_CONFIG.primarySurface ?? "tasks",
+  );
   const displayRef = useRef(display);
   const [initialProviderData] = useState(() => createInitialProviderData(clockNow));
   const [localData, setLocalData] = useState<LocalData>(() =>
@@ -223,6 +280,11 @@ export default function App() {
   const [sportsProviderStatus, setSportsProviderStatus] = useState<ProviderStatus>(
     () => initialProviderData.sportsStatus,
   );
+  const [sportsPreferences, setSportsPreferences] = useState<SportsPreferences>(
+    createDefaultSportsPreferences,
+  );
+  const [sportsPreferencesReady, setSportsPreferencesReady] = useState(false);
+  const [sportsRefreshing, setSportsRefreshing] = useState(false);
   const [googleCalendarEvents, setGoogleCalendarEvents] = useState<CalendarEvent[]>([]);
   const [calendarProviderStatus, setCalendarProviderStatus] = useState<ProviderStatus>({
     state: "needs-auth",
@@ -232,10 +294,21 @@ export default function App() {
   const [sceneKey, setSceneKey] = useState<SceneKey>("fallback.any");
   const [sceneMessage, setSceneMessage] = useState("Scene selection is preparing.");
   const [wallpaperStatus, setWallpaperStatus] = useState<ProviderStatus>(initialWallpaperStatus);
-  const [wallpaperFallback, setWallpaperFallback] = useState<WallpaperFallbackState>({
-    active: false,
-    mode: "automatic",
-  });
+  const [wallpaperSettings, setWallpaperSettings] = useState<WallpaperSettings>(
+    createDefaultWallpaperSettings,
+  );
+  const [wallpaperSettingsReady, setWallpaperSettingsReady] = useState(false);
+  const [wallpaperEngineConfigured, setWallpaperEngineConfigured] = useState(false);
+  const [wallpaperLibrary, setWallpaperLibrary] = useState<WallpaperLibraryState>(() =>
+    isTauriRuntime()
+      ? { items: [], totalBytes: 0, ignoredCount: 0, native: true }
+      : createPreviewWallpaperLibrary(),
+  );
+  const [activeWallpaperId, setActiveWallpaperId] = useState<string | undefined>();
+  const [wallpaperLibraryBusy, setWallpaperLibraryBusy] = useState(false);
+  const [wallpaperLibraryMessage, setWallpaperLibraryMessage] = useState(
+    "Loading the local wallpaper library…",
+  );
   const [nativeWallpaperStatus, setNativeWallpaperStatus] = useState<WallpaperEngineStatus | null>(
     null,
   );
@@ -264,13 +337,25 @@ export default function App() {
   const recorderRef = useRef<PushToTalkRecorder | undefined>(undefined);
   const githubProviderRef = useRef<GitHubDesktopProvider | undefined>(undefined);
   const sportsProviderRef = useRef<SportsDesktopProvider | undefined>(undefined);
+  const sportsRefreshQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const sportsRefreshRevisionRef = useRef(0);
+  const sportsRefreshPendingCountRef = useRef(0);
   const googleCalendarProviderRef = useRef<GoogleCalendarDesktopProvider | undefined>(undefined);
   const previewPresenceActivatedRef = useRef(PREVIEW_CONFIG.presence);
   const nativeOverlayReadyRef = useRef(false);
   const nativeWindowQueueRef = useRef(Promise.resolve());
   const nativeWindowRevisionRef = useRef(0);
   const wallpaperHostReadyRef = useRef(false);
+  const wallpaperShuffleRef = useRef<WallpaperShuffleState>({ remainingIds: [] });
+  const wallpaperSettingsRef = useRef(wallpaperSettings);
+  const wallpaperSourceModeRef = useRef(wallpaperSettings.sourceMode);
+  const wallpaperLifecycleRevisionRef = useRef(0);
+  const wallpaperSettingsDirtyRef = useRef(false);
+  const wallpaperSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const sportsPreferencesDirtyRef = useRef(false);
+  const sportsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [sceneRetryNonce, setSceneRetryNonce] = useState(0);
+  const [wallpaperConfigurationNonce, setWallpaperConfigurationNonce] = useState(0);
 
   const effectiveNow = PREVIEW_CONFIG.frozenNow ?? clockNow;
   const dateKey = localDateKey(effectiveNow) ?? "2026-05-11";
@@ -284,6 +369,25 @@ export default function App() {
     () => selectWeatherScene(weatherForDisplay, new Date(sceneMinute * 60_000)),
     [sceneMinute, weatherForDisplay],
   );
+  const activeWallpaper = useMemo(
+    () => wallpaperLibrary.items.find((item) => item.id === activeWallpaperId) ?? null,
+    [activeWallpaperId, wallpaperLibrary.items],
+  );
+  const wallpaperFallback = useMemo(
+    () =>
+      deriveWallpaperFallback(
+        wallpaperSettings,
+        nativeWallpaperStatus,
+        isTauriRuntime(),
+        Boolean(activeWallpaper),
+      ),
+    [activeWallpaper, nativeWallpaperStatus, wallpaperSettings],
+  );
+  const sportsFavoriteTeamIds = useMemo(
+    () => favoriteSportsTeamIds(sportsPreferences),
+    [sportsPreferences],
+  );
+  const sportsFavoriteTeamKey = sportsFavoriteTeamIds.join(",");
 
   const dispatchDisplay = useCallback((event: DisplayEvent) => {
     setDisplay((current) => transitionDisplay(current, event, Date.now()));
@@ -338,6 +442,21 @@ export default function App() {
     // Defer state synchronization so startup effects do not cause a cascading
     // render before the first painted frame.
     await Promise.resolve();
+    const sourceMode = wallpaperSourceModeRef.current;
+    const revision = wallpaperLifecycleRevisionRef.current;
+    if (sourceMode === "library") {
+      setWallpaperStatus({
+        state: activeWallpaper ? "ready" : "stale",
+        message: activeWallpaper
+          ? `${activeWallpaper.displayName} is showing from the local library.`
+          : "Add a local wallpaper or choose the calm built-in atmosphere.",
+      });
+      return;
+    }
+    if (sourceMode === "internal") {
+      setWallpaperStatus({ state: "ready", message: "Calm built-in atmosphere selected." });
+      return;
+    }
     if (PREVIEW_CONFIG.preview || !isTauriRuntime()) {
       setWallpaperStatus(previewWallpaperStatus());
       return;
@@ -345,6 +464,12 @@ export default function App() {
 
     setWallpaperStatus({ state: "loading", message: "Checking Wallpaper Engine availability…" });
     const result = await getWallpaperEngineStatus();
+    if (
+      revision !== wallpaperLifecycleRevisionRef.current ||
+      wallpaperSourceModeRef.current !== "wallpaper-engine"
+    ) {
+      return;
+    }
     if (result.ok) {
       setNativeWallpaperStatus(result.value);
       setWallpaperHostReady(result.value.inAppActive);
@@ -352,19 +477,680 @@ export default function App() {
       return;
     }
     setWallpaperStatus({ state: "error", message: result.message });
-  }, []);
+  }, [activeWallpaper]);
 
   const handleNativeWallpaperStatus = useCallback((status: WallpaperEngineStatus) => {
+    if (wallpaperSourceModeRef.current !== "wallpaper-engine") {
+      return;
+    }
     setNativeWallpaperStatus(status);
     setWallpaperHostReady(status.inAppActive);
     setWallpaperStatus(wallpaperStatusFromNative(status));
   }, []);
 
-  const handleWallpaperSceneTest = useCallback((_scene: SceneKey, result: WallpaperSceneResult) => {
-    setSceneMessage(result.message);
-    setWallpaperHostReady(result.inApp);
-    setWallpaperStatus(wallpaperStatusFromOperation(result));
+  const closeStaleInAppWallpaper = useCallback((recoverIfReselected: boolean) => {
+    void closeInAppWallpaper().then((result) => {
+      if (!result.ok) {
+        if (wallpaperSourceModeRef.current === "wallpaper-engine") {
+          setWallpaperStatus({ state: "error", message: result.message });
+        }
+        return;
+      }
+      wallpaperHostReadyRef.current = false;
+      setWallpaperHostReady(false);
+      if (recoverIfReselected && wallpaperSourceModeRef.current === "wallpaper-engine") {
+        setWallpaperEngineConfigured(false);
+        setWallpaperConfigurationNonce((current) => current + 1);
+      }
+    });
   }, []);
+
+  const runWallpaperSceneTest = useCallback(
+    async (
+      scene: SceneKey,
+      requestedSettings = wallpaperSettingsRef.current,
+    ): Promise<WallpaperSceneResult> => {
+      if (wallpaperSourceModeRef.current !== "wallpaper-engine") {
+        return unavailableWallpaperSceneResult(
+          "Select Wallpaper Engine before testing one of its scenes.",
+        );
+      }
+
+      const revision = wallpaperLifecycleRevisionRef.current;
+      const stillCurrent = () =>
+        revision === wallpaperLifecycleRevisionRef.current &&
+        wallpaperSourceModeRef.current === "wallpaper-engine";
+      let temporaryConfigurationInstalled = false;
+      let restorationProblem: "error" | "stale" | undefined;
+      let sceneTestRan = false;
+      let result: WallpaperSceneResult;
+
+      if (isTauriRuntime()) {
+        const configured = await configureWallpaperEngine({
+          executablePath: requestedSettings.executablePath,
+          wallpaperFile: requestedSettings.wallpaperFile,
+          wallpaperFiles: requestedSettings.wallpaperFiles,
+        });
+        if (!configured.ok) {
+          return unavailableWallpaperSceneResult(configured.message);
+        }
+        if (!stillCurrent()) {
+          return unavailableWallpaperSceneResult(
+            "Scene test cancelled because the wallpaper source changed.",
+          );
+        }
+        temporaryConfigurationInstalled = !wallpaperEngineSettingsMatch(
+          requestedSettings,
+          wallpaperSettingsRef.current,
+        );
+        handleNativeWallpaperStatus(configured.value);
+
+        const monitor = await setDisplayMonitor(requestedSettings.overlayMonitorIndex);
+        if (!monitor.ok) {
+          result = unavailableWallpaperSceneResult(monitor.message);
+        } else if (!stillCurrent()) {
+          result = unavailableWallpaperSceneResult(
+            "Scene test cancelled because the wallpaper settings changed.",
+          );
+        } else {
+          result = await applyWallpaperScene(scene, true);
+          sceneTestRan = true;
+        }
+      } else {
+        result = await applyWallpaperScene(scene, true);
+        sceneTestRan = true;
+      }
+
+      if (!stillCurrent()) {
+        if (result.inApp) {
+          closeStaleInAppWallpaper(true);
+        }
+        return unavailableWallpaperSceneResult(
+          "Scene test cancelled because the wallpaper source changed.",
+        );
+      }
+
+      if (temporaryConfigurationInstalled) {
+        const savedSettings = wallpaperSettingsRef.current;
+        const restored = await configureWallpaperEngine({
+          executablePath: savedSettings.executablePath,
+          wallpaperFile: savedSettings.wallpaperFile,
+          wallpaperFiles: savedSettings.wallpaperFiles,
+        });
+        if (!stillCurrent()) {
+          if (result.inApp) {
+            closeStaleInAppWallpaper(true);
+          }
+          return unavailableWallpaperSceneResult(
+            "Scene test cancelled because the wallpaper settings changed.",
+          );
+        }
+        if (!restored.ok) {
+          const message = `${result.message} Saved wallpaper settings could not be restored: ${restored.message}`;
+          result = { ...result, message };
+          restorationProblem = "error";
+        } else {
+          handleNativeWallpaperStatus(restored.value);
+          const monitor = await setDisplayMonitor(savedSettings.overlayMonitorIndex);
+          if (!stillCurrent()) {
+            if (result.inApp) {
+              closeStaleInAppWallpaper(true);
+            }
+            return unavailableWallpaperSceneResult(
+              "Scene test cancelled because the wallpaper settings changed.",
+            );
+          }
+          if (!monitor.ok) {
+            result = { ...result, message: `${result.message} ${monitor.message}` };
+            restorationProblem = "stale";
+          }
+        }
+      }
+
+      setSceneMessage(result.message);
+      if (sceneTestRan) {
+        wallpaperHostReadyRef.current = result.inApp;
+        setWallpaperHostReady(result.inApp);
+      }
+      setWallpaperStatus(
+        restorationProblem
+          ? { state: restorationProblem, message: result.message }
+          : wallpaperStatusFromOperation(result),
+      );
+      return result;
+    },
+    [closeStaleInAppWallpaper, handleNativeWallpaperStatus],
+  );
+
+  const commitWallpaperSettings = useCallback((next: WallpaperSettings) => {
+    wallpaperSettingsDirtyRef.current = true;
+    wallpaperSettingsRef.current = next;
+    wallpaperSourceModeRef.current = next.sourceMode;
+    wallpaperLifecycleRevisionRef.current += 1;
+    attemptedSceneRef.current = undefined;
+    setWallpaperEngineConfigured(false);
+    setWallpaperSettings(next);
+    setSceneLock(next.sceneLock);
+    wallpaperSaveQueueRef.current = wallpaperSaveQueueRef.current
+      .then(() => saveWallpaperSettings(next))
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+  }, []);
+
+  const updateSportsPreferences = useCallback((next: SportsPreferences) => {
+    sportsPreferencesDirtyRef.current = true;
+    setSportsPreferences(next);
+    sportsSaveQueueRef.current = sportsSaveQueueRef.current
+      .then(() => saveSportsPreferences(next, PREVIEW_CONFIG.preview ? "preview" : "production"))
+      .then(
+        () => undefined,
+        () => undefined,
+      );
+  }, []);
+
+  const handleWallpaperSourceChange = useCallback(
+    (sourceMode: WallpaperSourceMode) => {
+      setWallpaperEngineConfigured(false);
+      const next = withWallpaperSourceMode(wallpaperSettings, sourceMode);
+      commitWallpaperSettings(next);
+      if (sourceMode === "library") {
+        const selectedId = resolveWallpaperSelection(
+          wallpaperLibrary.items.map((item) => item.id),
+          next.library,
+          activeWallpaperId,
+        );
+        setActiveWallpaperId(selectedId);
+        wallpaperShuffleRef.current = createWallpaperShuffleState(
+          next.library.enabledIds,
+          selectedId,
+        );
+        setWallpaperLibraryMessage(
+          selectedId ? "Local wallpaper library selected." : "Add an image or video to begin.",
+        );
+      } else if (sourceMode === "internal") {
+        setWallpaperLibraryMessage("Calm built-in atmosphere selected.");
+      } else {
+        setWallpaperLibraryMessage("Wallpaper Engine selected as the advanced source.");
+      }
+    },
+    [activeWallpaperId, commitWallpaperSettings, wallpaperLibrary.items, wallpaperSettings],
+  );
+
+  const handleWallpaperPlaybackChange = useCallback(
+    (playbackMode: WallpaperPlaybackMode) => {
+      const selectedId =
+        activeWallpaperId ??
+        resolveWallpaperSelection(
+          wallpaperLibrary.items.map((item) => item.id),
+          wallpaperSettings.library,
+        );
+      const next = {
+        ...withWallpaperSourceMode(wallpaperSettings, "library"),
+        library: { ...wallpaperSettings.library, playbackMode, selectedId },
+      };
+      commitWallpaperSettings(next);
+      setActiveWallpaperId(selectedId);
+      wallpaperShuffleRef.current = createWallpaperShuffleState(
+        next.library.enabledIds,
+        selectedId,
+      );
+    },
+    [activeWallpaperId, commitWallpaperSettings, wallpaperLibrary.items, wallpaperSettings],
+  );
+
+  const handleWallpaperIntervalChange = useCallback(
+    (shuffleIntervalMinutes: number) => {
+      const next = {
+        ...wallpaperSettings,
+        library: {
+          ...wallpaperSettings.library,
+          shuffleIntervalMinutes: Math.min(1_440, Math.max(5, Math.round(shuffleIntervalMinutes))),
+        },
+      };
+      commitWallpaperSettings(next);
+    },
+    [commitWallpaperSettings, wallpaperSettings],
+  );
+
+  const handleWallpaperSelect = useCallback(
+    (id: string) => {
+      if (!wallpaperLibrary.items.some((item) => item.id === id)) {
+        return;
+      }
+      const next = {
+        ...withWallpaperSourceMode(wallpaperSettings, "library"),
+        library: { ...wallpaperSettings.library, selectedId: id },
+      };
+      commitWallpaperSettings(next);
+      setActiveWallpaperId(id);
+      wallpaperShuffleRef.current = selectWallpaperNow(
+        wallpaperShuffleRef.current,
+        id,
+        next.library.enabledIds,
+      );
+      setWallpaperLibraryMessage("Wallpaper changed.");
+    },
+    [commitWallpaperSettings, wallpaperLibrary.items, wallpaperSettings],
+  );
+
+  const handleWallpaperToggleEnabled = useCallback(
+    (id: string, enabled: boolean) => {
+      const enabledIds = enabled
+        ? Array.from(new Set([...wallpaperSettings.library.enabledIds, id]))
+        : wallpaperSettings.library.enabledIds.filter((candidate) => candidate !== id);
+      const next = {
+        ...wallpaperSettings,
+        library: { ...wallpaperSettings.library, enabledIds },
+      };
+      commitWallpaperSettings(next);
+      wallpaperShuffleRef.current = reconcileWallpaperShuffle(
+        wallpaperShuffleRef.current,
+        enabledIds,
+        next.library.selectedId,
+      );
+      if (
+        next.sourceMode === "library" &&
+        next.library.playbackMode === "shuffle" &&
+        activeWallpaperId &&
+        !enabledIds.includes(activeWallpaperId)
+      ) {
+        setActiveWallpaperId(
+          resolveWallpaperSelection(
+            wallpaperLibrary.items.map((item) => item.id),
+            next.library,
+          ),
+        );
+      }
+    },
+    [activeWallpaperId, commitWallpaperSettings, wallpaperLibrary.items, wallpaperSettings],
+  );
+
+  const handleWallpaperImport = useCallback(async () => {
+    setWallpaperLibraryBusy(true);
+    setWallpaperLibraryMessage("Adding selected media to Ambient Glass…");
+    const imported = await importPickedWallpaperFiles();
+    setWallpaperLibraryBusy(false);
+    if (!imported.ok) {
+      setWallpaperLibraryMessage(imported.message);
+      return;
+    }
+    if (imported.value.cancelled) {
+      setWallpaperLibraryMessage("No files were added.");
+      return;
+    }
+    if (!imported.value.library || !imported.value.result) {
+      setWallpaperLibraryMessage("The wallpaper library did not return an updated snapshot.");
+      return;
+    }
+
+    const nextLibrary = imported.value.library;
+    const currentSettings = wallpaperSettingsRef.current;
+    const nextSettings = reconcileWallpaperSettingsWithLibrary(
+      withImportedWallpapersEnabled(currentSettings, imported.value.result.importedIds),
+      nextLibrary,
+    );
+    setWallpaperLibrary(nextLibrary);
+    commitWallpaperSettings(nextSettings);
+    const selectedId = resolveWallpaperSelection(
+      nextLibrary.items.map((item) => item.id),
+      nextSettings.library,
+    );
+    setActiveWallpaperId(selectedId);
+    wallpaperShuffleRef.current = createWallpaperShuffleState(
+      nextSettings.library.enabledIds,
+      selectedId,
+    );
+    const duplicateCount = imported.value.result.duplicateIds.length;
+    const rejectedCount = imported.value.result.rejected.length;
+    setWallpaperLibraryMessage(
+      `${imported.value.result.importedIds.length} added${
+        duplicateCount ? ` · ${duplicateCount} already present` : ""
+      }${rejectedCount ? ` · ${rejectedCount} skipped` : ""}.`,
+    );
+  }, [commitWallpaperSettings]);
+
+  const handleWallpaperDelete = useCallback(
+    async (id: string) => {
+      setWallpaperLibraryBusy(true);
+      const deleted = await deleteWallpaperFromLibrary(id);
+      setWallpaperLibraryBusy(false);
+      if (!deleted.ok) {
+        setWallpaperLibraryMessage(deleted.message);
+        return;
+      }
+      const nextSettings = reconcileWallpaperSettingsWithLibrary(
+        wallpaperSettingsRef.current,
+        deleted.value,
+      );
+      setWallpaperLibrary(deleted.value);
+      commitWallpaperSettings(nextSettings);
+      const selectedId = resolveWallpaperSelection(
+        deleted.value.items.map((item) => item.id),
+        nextSettings.library,
+      );
+      setActiveWallpaperId(selectedId);
+      wallpaperShuffleRef.current = reconcileWallpaperShuffle(
+        wallpaperShuffleRef.current,
+        nextSettings.library.enabledIds,
+        selectedId,
+      );
+      setWallpaperLibraryMessage("Wallpaper removed from Ambient Glass.");
+    },
+    [commitWallpaperSettings],
+  );
+
+  const handleRevealWallpaperLibrary = useCallback(async () => {
+    const revealed = await revealWallpaperLibrary();
+    if (!revealed.ok) {
+      setWallpaperLibraryMessage(revealed.message);
+    }
+  }, []);
+
+  const handleWallpaperAssetError = useCallback(
+    (id: string) => {
+      const currentSettings = wallpaperSettingsRef.current;
+      setWallpaperLibrary((current) => ({
+        ...current,
+        items: current.items.filter((item) => item.id !== id),
+      }));
+      const availableIds = wallpaperLibrary.items
+        .map((item) => item.id)
+        .filter((candidate) => candidate !== id);
+      const enabledIds = currentSettings.library.enabledIds.filter((candidate) => candidate !== id);
+      const nextLibraryPreferences = {
+        ...currentSettings.library,
+        enabledIds,
+        selectedId:
+          currentSettings.library.selectedId === id
+            ? undefined
+            : currentSettings.library.selectedId,
+      };
+      const selectedId = resolveWallpaperSelection(availableIds, nextLibraryPreferences);
+      const next: WallpaperSettings = {
+        ...currentSettings,
+        library: { ...nextLibraryPreferences, selectedId },
+      };
+      commitWallpaperSettings(next);
+      wallpaperShuffleRef.current = reconcileWallpaperShuffle(
+        wallpaperShuffleRef.current,
+        enabledIds,
+        selectedId,
+      );
+      setActiveWallpaperId(selectedId);
+      setWallpaperLibraryMessage(
+        selectedId
+          ? "One file could not play and was removed from the shuffle."
+          : "That file could not play. Using the calm fallback.",
+      );
+    },
+    [commitWallpaperSettings, wallpaperLibrary.items],
+  );
+
+  const queueSportsRefresh = useCallback(
+    (
+      provider: SportsDesktopProvider,
+      refreshDateKey: string,
+      favoriteTeamIds: readonly string[],
+      revision: number,
+      isCurrent: () => boolean,
+    ): Promise<void> => {
+      sportsRefreshPendingCountRef.current += 1;
+      setSportsRefreshing(true);
+
+      const refresh = sportsRefreshQueueRef.current.then(async () => {
+        if (!isCurrent() || revision !== sportsRefreshRevisionRef.current) {
+          return;
+        }
+        setSportsProviderStatus({ state: "loading", message: "Refreshing sports…" });
+        try {
+          const result = await provider.refresh(refreshDateKey, favoriteTeamIds);
+          if (!isCurrent() || revision !== sportsRefreshRevisionRef.current) {
+            return;
+          }
+          setSportsProviderStatus(provider.getStatus());
+          if (result) {
+            setSportsEvents(result);
+          }
+        } catch {
+          if (isCurrent() && revision === sportsRefreshRevisionRef.current) {
+            setSportsProviderStatus({
+              state: "error",
+              message: "Sports refresh failed. Try again shortly.",
+            });
+          }
+        }
+      });
+      sportsRefreshQueueRef.current = refresh.catch(() => undefined);
+
+      return refresh.finally(() => {
+        sportsRefreshPendingCountRef.current = Math.max(
+          0,
+          sportsRefreshPendingCountRef.current - 1,
+        );
+        if (sportsRefreshPendingCountRef.current === 0) {
+          setSportsRefreshing(false);
+        }
+      });
+    },
+    [],
+  );
+
+  const refreshSportsNow = useCallback(async () => {
+    if (PREVIEW_CONFIG.preview || !isTauriRuntime() || sportsRefreshPendingCountRef.current > 0) {
+      return;
+    }
+    const provider =
+      sportsProviderRef.current ?? new SportsDesktopProvider(dateKey, sportsFavoriteTeamIds);
+    sportsProviderRef.current = provider;
+    const revision = sportsRefreshRevisionRef.current;
+    await queueSportsRefresh(
+      provider,
+      dateKey,
+      sportsFavoriteTeamIds,
+      revision,
+      () => revision === sportsRefreshRevisionRef.current,
+    );
+  }, [dateKey, queueSportsRefresh, sportsFavoriteTeamIds]);
+
+  useEffect(() => {
+    let active = true;
+    void loadSportsPreferences(PREVIEW_CONFIG.preview ? "preview" : "production")
+      .then((preferences) => {
+        if (active) {
+          if (!sportsPreferencesDirtyRef.current) {
+            setSportsPreferences(preferences);
+          }
+          setSportsPreferencesReady(true);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSportsPreferencesReady(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !wallpaperSettingsReady ||
+      wallpaperSettings.sourceMode !== "wallpaper-engine" ||
+      PREVIEW_CONFIG.preview ||
+      !isTauriRuntime()
+    ) {
+      return;
+    }
+    if (
+      !wallpaperSettings.wallpaperFile &&
+      Object.keys(wallpaperSettings.wallpaperFiles).length === 0
+    ) {
+      void Promise.resolve().then(() => {
+        setWallpaperStatus({
+          state: "stale",
+          message: "Choose a Wallpaper Engine file before using this source.",
+        });
+      });
+      return;
+    }
+
+    let active = true;
+    const revision = wallpaperLifecycleRevisionRef.current;
+    const stillCurrent = () =>
+      active &&
+      revision === wallpaperLifecycleRevisionRef.current &&
+      wallpaperSourceModeRef.current === "wallpaper-engine";
+    void Promise.resolve().then(async () => {
+      if (!stillCurrent()) {
+        return;
+      }
+      setWallpaperStatus({ state: "loading", message: "Preparing Wallpaper Engine…" });
+      const configured = await configureWallpaperEngine({
+        executablePath: wallpaperSettings.executablePath,
+        wallpaperFile: wallpaperSettings.wallpaperFile,
+        wallpaperFiles: wallpaperSettings.wallpaperFiles,
+      });
+      if (!stillCurrent()) {
+        return;
+      }
+      if (!configured.ok) {
+        setWallpaperStatus({ state: "error", message: configured.message });
+        return;
+      }
+
+      handleNativeWallpaperStatus(configured.value);
+      const monitor = await setDisplayMonitor(wallpaperSettings.overlayMonitorIndex);
+      if (!stillCurrent()) {
+        return;
+      }
+      if (!monitor.ok) {
+        setWallpaperStatus({ state: "stale", message: monitor.message });
+      }
+      sceneStateRef.current = {
+        ...sceneStateRef.current,
+        lastIssuedSceneKey: undefined,
+      };
+      attemptedSceneRef.current = undefined;
+      setWallpaperEngineConfigured(true);
+      setSceneRetryNonce((current) => current + 1);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    handleNativeWallpaperStatus,
+    wallpaperConfigurationNonce,
+    wallpaperSettings,
+    wallpaperSettingsReady,
+  ]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([loadWallpaperSettings(), loadWallpaperLibrary()])
+      .then(([savedSettings, libraryResult]) => {
+        if (!active) {
+          return;
+        }
+        const library = libraryResult.ok
+          ? libraryResult.value
+          : isTauriRuntime()
+            ? { items: [], totalBytes: 0, ignoredCount: 0, native: true }
+            : createPreviewWallpaperLibrary();
+        const baseSettings = wallpaperSettingsDirtyRef.current
+          ? wallpaperSettingsRef.current
+          : savedSettings;
+        const hadLibraryChoice = Boolean(
+          baseSettings.library.selectedId || baseSettings.library.enabledIds.length,
+        );
+        let reconciled = reconcileWallpaperSettingsWithLibrary(baseSettings, library);
+        if (!hadLibraryChoice && library.items.length > 0) {
+          reconciled = {
+            ...reconciled,
+            library: {
+              ...reconciled.library,
+              enabledIds: library.items.map((item) => item.id),
+            },
+          };
+        }
+        const selectedId = resolveWallpaperSelection(
+          library.items.map((item) => item.id),
+          reconciled.library,
+        );
+        setWallpaperLibrary(library);
+        setWallpaperEngineConfigured(false);
+        wallpaperSettingsRef.current = reconciled;
+        wallpaperSourceModeRef.current = reconciled.sourceMode;
+        wallpaperLifecycleRevisionRef.current += 1;
+        setWallpaperSettings(reconciled);
+        setWallpaperSettingsReady(true);
+        setSceneLock(reconciled.sceneLock);
+        setActiveWallpaperId(selectedId);
+        wallpaperShuffleRef.current = createWallpaperShuffleState(
+          reconciled.library.enabledIds,
+          selectedId,
+        );
+        wallpaperSaveQueueRef.current = wallpaperSaveQueueRef.current
+          .then(() => saveWallpaperSettings(reconciled))
+          .then(
+            () => undefined,
+            () => undefined,
+          );
+        setWallpaperLibraryMessage(
+          libraryResult.ok
+            ? library.native
+              ? `${library.items.length} local ${library.items.length === 1 ? "wallpaper" : "wallpapers"} available.`
+              : "Preview library ready. Import is available in the desktop app."
+            : libraryResult.message,
+        );
+      })
+      .catch(() => {
+        if (active) {
+          setWallpaperSettingsReady(true);
+          setWallpaperLibraryMessage(
+            "The local wallpaper library could not be loaded. Using the calm fallback.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const enabledIds = wallpaperSettings.library.enabledIds.filter((id) =>
+      wallpaperLibrary.items.some((item) => item.id === id),
+    );
+    wallpaperShuffleRef.current = reconcileWallpaperShuffle(
+      wallpaperShuffleRef.current,
+      enabledIds,
+      wallpaperSettings.library.selectedId,
+    );
+    if (
+      wallpaperSettings.sourceMode !== "library" ||
+      wallpaperSettings.library.playbackMode !== "shuffle" ||
+      enabledIds.length < 2
+    ) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      const decision = advanceWallpaperShuffle(wallpaperShuffleRef.current, enabledIds);
+      wallpaperShuffleRef.current = decision.state;
+      setActiveWallpaperId(decision.selectedId);
+    }, wallpaperSettings.library.shuffleIntervalMinutes * 60_000);
+    return () => window.clearInterval(interval);
+  }, [
+    wallpaperLibrary.items,
+    wallpaperSettings.library.enabledIds,
+    wallpaperSettings.library.playbackMode,
+    wallpaperSettings.library.selectedId,
+    wallpaperSettings.library.shuffleIntervalMinutes,
+    wallpaperSettings.sourceMode,
+  ]);
 
   const refreshNativeStatus = useCallback(() => {
     void secureStorageStatus().then(setSecureStatus);
@@ -387,6 +1173,9 @@ export default function App() {
     setDisplay((current) => {
       if (current.mode === "ambient" || current.mode === "sleep") {
         return transitionDisplay(current, { type: "MANUAL_WAKE" }, now);
+      }
+      if (current.mode === "interactive") {
+        return transitionDisplay(current, { type: "ENTER_INTERACTIVE" }, now);
       }
       return current;
     });
@@ -616,14 +1405,19 @@ export default function App() {
       void refreshWallpaperHealth();
     }, 0);
     return () => window.clearTimeout(startHealthCheck);
-  }, [refreshWallpaperHealth]);
+  }, [refreshWallpaperHealth, wallpaperSettings.sourceMode]);
 
   useEffect(() => {
     wallpaperHostReadyRef.current = wallpaperHostReady;
   }, [wallpaperHostReady]);
 
   useEffect(() => {
-    if (PREVIEW_CONFIG.preview || !isTauriRuntime() || wallpaperFallback.active) {
+    if (
+      wallpaperSettings.sourceMode !== "wallpaper-engine" ||
+      PREVIEW_CONFIG.preview ||
+      !isTauriRuntime() ||
+      wallpaperFallback.active
+    ) {
       return;
     }
 
@@ -661,7 +1455,7 @@ export default function App() {
       window.clearInterval(interval);
       window.removeEventListener("focus", checkHost);
     };
-  }, [wallpaperFallback.active]);
+  }, [wallpaperFallback.active, wallpaperSettings.sourceMode]);
 
   useEffect(() => {
     let disposed = false;
@@ -846,6 +1640,26 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (
+      PREVIEW_CONFIG.primarySurface ||
+      (display.mode !== "glance" && display.mode !== "awakening") ||
+      voiceState === "recording" ||
+      voiceState === "processing" ||
+      activeAlarm
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setPrimaryGlanceSurface((current) => {
+        const index = PRIMARY_GLANCE_SEQUENCE.indexOf(current);
+        return PRIMARY_GLANCE_SEQUENCE[(index + 1) % PRIMARY_GLANCE_SEQUENCE.length];
+      });
+    }, PRIMARY_GLANCE_DURATION_MS[primaryGlanceSurface]);
+    return () => window.clearTimeout(timer);
+  }, [activeAlarm, display.mode, primaryGlanceSurface, voiceState]);
+
+  useEffect(() => {
     const scheduled = nextScheduledDisplayEvent(display);
     if (!scheduled) {
       return;
@@ -1006,14 +1820,16 @@ export default function App() {
   }, [dateKey, secureStatus?.githubTokenConfigured]);
 
   useEffect(() => {
-    if (PREVIEW_CONFIG.preview) {
+    if (PREVIEW_CONFIG.preview || !sportsPreferencesReady) {
       return;
     }
     let active = true;
-    const provider = new SportsDesktopProvider(dateKey);
+    const revision = ++sportsRefreshRevisionRef.current;
+    const favoriteTeamIds = sportsFavoriteTeamKey ? sportsFavoriteTeamKey.split(",") : [];
+    const provider = new SportsDesktopProvider(dateKey, favoriteTeamIds);
     sportsProviderRef.current = provider;
     void Promise.resolve().then(() => {
-      if (!active) {
+      if (!active || revision !== sportsRefreshRevisionRef.current) {
         return;
       }
       setSportsEvents(provider.getCached() ?? []);
@@ -1024,23 +1840,41 @@ export default function App() {
         active = false;
       };
     }
-    const refresh = async () => {
-      const result = await provider.refresh(dateKey);
-      if (!active) {
-        return;
+    const refresh = () =>
+      queueSportsRefresh(
+        provider,
+        dateKey,
+        favoriteTeamIds,
+        revision,
+        () => active && revision === sportsRefreshRevisionRef.current,
+      );
+    // Queue a changed team selection behind any older in-flight refresh. The
+    // revision check drops the obsolete result while keeping native requests
+    // serialized.
+    void Promise.resolve().then(() => {
+      if (active) {
+        void refresh();
       }
-      setSportsProviderStatus(provider.getStatus());
-      if (result) {
-        setSportsEvents(result);
-      }
-    };
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 5 * 60 * 1_000);
+    });
+    const interval = window.setInterval(
+      () => {
+        if (sportsRefreshPendingCountRef.current === 0) {
+          void refresh();
+        }
+      },
+      5 * 60 * 1_000,
+    );
     return () => {
       active = false;
       window.clearInterval(interval);
     };
-  }, [dateKey, secureStatus?.sportsApiKeyConfigured]);
+  }, [
+    dateKey,
+    queueSportsRefresh,
+    secureStatus?.sportsApiKeyConfigured,
+    sportsFavoriteTeamKey,
+    sportsPreferencesReady,
+  ]);
 
   useEffect(() => {
     if (PREVIEW_CONFIG.preview) {
@@ -1099,6 +1933,23 @@ export default function App() {
       attemptedSceneRef.current = undefined;
     }
 
+    if (wallpaperSettings.sourceMode !== "wallpaper-engine") {
+      clearSceneRetryTimer();
+      attemptedSceneRef.current = undefined;
+      sceneStateRef.current = {
+        ...sceneStateRef.current,
+        lastIssuedSceneKey: undefined,
+      };
+      setSceneMessage(
+        wallpaperSettings.sourceMode === "library"
+          ? activeWallpaper
+            ? `Local wallpaper: ${activeWallpaper.displayName}.`
+            : "The local wallpaper library is preparing."
+          : "Using the calm built-in atmosphere.",
+      );
+      return;
+    }
+
     if (PREVIEW_CONFIG.preview || !isTauriRuntime()) {
       clearSceneRetryTimer();
       attemptedSceneRef.current = undefined;
@@ -1111,6 +1962,13 @@ export default function App() {
       clearSceneRetryTimer();
       attemptedSceneRef.current = undefined;
       setSceneMessage(wallpaperFallback.reason ?? "Using the internal fallback scene.");
+      return;
+    }
+
+    if (!wallpaperSettingsReady || !wallpaperEngineConfigured) {
+      clearSceneRetryTimer();
+      attemptedSceneRef.current = undefined;
+      setSceneMessage("Preparing the saved Wallpaper Engine configuration…");
       return;
     }
 
@@ -1137,10 +1995,18 @@ export default function App() {
       message: `Applying ${friendlySceneName(desired)} scene…`,
     });
 
+    const lifecycleRevision = wallpaperLifecycleRevisionRef.current;
     void applyWallpaperScene(desired).then((result) => {
       // A newer desired scene owns the health surface. Ignore any late result
       // from an in-flight request that was invalidated above.
-      if (attemptedSceneRef.current !== attempt || desiredSceneRef.current !== desired) {
+      if (
+        attemptedSceneRef.current !== attempt ||
+        desiredSceneRef.current !== desired ||
+        lifecycleRevision !== wallpaperLifecycleRevisionRef.current
+      ) {
+        if (wallpaperSourceModeRef.current !== "wallpaper-engine" && result.inApp) {
+          closeStaleInAppWallpaper(true);
+        }
         return;
       }
 
@@ -1188,19 +2054,37 @@ export default function App() {
     });
   }, [
     automaticScene,
+    activeWallpaper,
     clearSceneRetryTimer,
+    closeStaleInAppWallpaper,
     sceneLock,
     sceneRetryNonce,
     wallpaperFallback.active,
     wallpaperFallback.reason,
+    wallpaperEngineConfigured,
+    wallpaperSettingsReady,
+    wallpaperSettings.sourceMode,
   ]);
 
   useEffect(() => {
-    if (!wallpaperFallback.active || !isTauriRuntime()) {
+    if (
+      !wallpaperSettingsReady ||
+      !isTauriRuntime() ||
+      (wallpaperSettings.sourceMode === "wallpaper-engine" && !wallpaperFallback.active)
+    ) {
       return;
     }
-    void closeInAppWallpaper();
-  }, [wallpaperFallback.active]);
+    sceneStateRef.current = {
+      ...sceneStateRef.current,
+      lastIssuedSceneKey: undefined,
+    };
+    closeStaleInAppWallpaper(wallpaperSettings.sourceMode !== "wallpaper-engine");
+  }, [
+    closeStaleInAppWallpaper,
+    wallpaperFallback.active,
+    wallpaperSettings.sourceMode,
+    wallpaperSettingsReady,
+  ]);
 
   useEffect(() => {
     saveLocalData(localData, PREVIEW_CONFIG.preview ? "preview" : "production");
@@ -1358,29 +2242,35 @@ export default function App() {
   const event = calendarEvents[0] ?? (PREVIEW_CONFIG.preview ? previewEvents[0] : undefined);
   const scoreDisplays = useMemo<ScoreDisplay[]>(
     () =>
-      (PREVIEW_CONFIG.offline ? [] : sortSportsEvents(sportsEvents)).map((sport) => ({
-        id: sport.id,
-        league: sport.league,
-        sport: sport.sport,
-        status: sport.clockOrPeriod ?? sport.status,
-        state: sport.status === "live" ? "live" : sport.status === "final" ? "final" : "scheduled",
-        away: {
-          name: sport.awayName,
-          shortName: sport.awayName.slice(0, 3).toUpperCase(),
-          score: sport.awayScore,
-          mark: sport.awayName.slice(0, 1),
-          color: sport.status === "live" ? "#f3bd4f" : "#d6b458",
-        },
-        home: {
-          name: sport.homeName,
-          shortName: sport.homeName.slice(0, 3).toUpperCase(),
-          score: sport.homeScore,
-          mark: sport.homeName.slice(0, 1),
-          color: sport.status === "live" ? "#5799f4" : "#ae5cbb",
-        },
-      })),
-    [sportsEvents],
+      (PREVIEW_CONFIG.offline ? [] : selectSportsEvents(sportsEvents, sportsPreferences)).map(
+        (sport) => ({
+          id: sport.id,
+          league: sport.league,
+          sport: sport.sport,
+          status: sport.clockOrPeriod ?? sport.status,
+          state:
+            sport.status === "live" ? "live" : sport.status === "final" ? "final" : "scheduled",
+          away: {
+            name: sport.awayName,
+            shortName: sport.awayName.slice(0, 3).toUpperCase(),
+            badgeUrl: sport.awayBadgeUrl,
+            score: sport.awayScore,
+            mark: sport.awayName.slice(0, 1),
+            color: sport.status === "live" ? "#f3bd4f" : "#d6b458",
+          },
+          home: {
+            name: sport.homeName,
+            shortName: sport.homeName.slice(0, 3).toUpperCase(),
+            badgeUrl: sport.homeBadgeUrl,
+            score: sport.homeScore,
+            mark: sport.homeName.slice(0, 1),
+            color: sport.status === "live" ? "#5799f4" : "#ae5cbb",
+          },
+        }),
+      ),
+    [sportsEvents, sportsPreferences],
   );
+  const availableSportsTeams = useMemo(() => sportsTeamsFromEvents(sportsEvents), [sportsEvents]);
   const weatherDisplay = toWeatherDisplay(weatherForDisplay);
   const heroTime = formatHeroTime(effectiveNow);
   // A same-day cache stays visible after a provider is disconnected, but it
@@ -1468,6 +2358,8 @@ export default function App() {
       setCommandMessage,
       setSceneLock,
       setSceneMessage,
+      setPrimarySurface: setInteractivePrimarySurface,
+      testScene: runWallpaperSceneTest,
       snoozeActiveAlarm,
       triggerCelebration: () => dispatchDisplay({ type: "CELEBRATION_TRIGGERED" }),
     });
@@ -1527,7 +2419,7 @@ export default function App() {
       <section className="app-settings__section">
         <p className="app-settings__eyebrow">Display health</p>
         <StatusRow
-          label="Wallpaper Engine"
+          label="Wallpaper"
           detail={wallpaperStatus.message ?? sceneMessage}
           state={wallpaperStatus.state}
         />
@@ -1670,13 +2562,48 @@ export default function App() {
         >
           Use current location
         </button>
-        <WallpaperSetup
-          engineStatus={nativeWallpaperStatus}
-          sceneLock={sceneLock}
-          onEngineStatusChange={handleNativeWallpaperStatus}
-          onFallbackChange={setWallpaperFallback}
-          onSceneLockChange={setSceneLock}
-          onSceneTest={handleWallpaperSceneTest}
+        <WallpaperLibrary
+          items={wallpaperLibrary.items}
+          preferences={wallpaperSettings.library}
+          activeId={wallpaperSettings.sourceMode === "library" ? activeWallpaperId : undefined}
+          sourceMode={wallpaperSettings.sourceMode}
+          nativeAvailable={wallpaperLibrary.native}
+          ready={wallpaperSettingsReady}
+          busy={wallpaperLibraryBusy}
+          totalBytes={wallpaperLibrary.totalBytes}
+          message={wallpaperLibraryMessage}
+          onSourceModeChange={handleWallpaperSourceChange}
+          onPlaybackModeChange={handleWallpaperPlaybackChange}
+          onIntervalChange={handleWallpaperIntervalChange}
+          onSelectWallpaper={handleWallpaperSelect}
+          onToggleEnabled={handleWallpaperToggleEnabled}
+          onDelete={(id) => void handleWallpaperDelete(id)}
+          onImport={() => void handleWallpaperImport()}
+          onReveal={() => void handleRevealWallpaperLibrary()}
+        />
+        {wallpaperSettings.sourceMode === "wallpaper-engine" ? (
+          <WallpaperSetup
+            settingsValue={wallpaperSettings}
+            engineStatus={nativeWallpaperStatus}
+            sceneLock={sceneLock}
+            onEngineStatusChange={handleNativeWallpaperStatus}
+            onSettingsApplied={commitWallpaperSettings}
+            onSceneLockChange={setSceneLock}
+            onSceneTestRequest={runWallpaperSceneTest}
+          />
+        ) : null}
+        <SportsSetup
+          preferences={sportsPreferences}
+          availableTeams={availableSportsTeams}
+          providerStatus={sportsProviderStatus}
+          refreshing={sportsRefreshing}
+          preview={PREVIEW_CONFIG.preview}
+          onChange={updateSportsPreferences}
+          onRefresh={
+            !PREVIEW_CONFIG.preview && isTauriRuntime() && secureStatus?.sportsApiKeyConfigured
+              ? () => void refreshSportsNow()
+              : undefined
+          }
         />
         <button
           type="button"
@@ -1871,11 +2798,20 @@ export default function App() {
         contrast={
           weatherFamily === "clear" && weatherForDisplay.isDay ? "light-scene" : "dark-scene"
         }
-        // Browser previews and native failures retain the calm internal scene.
-        // A confirmed Wallpaper Engine pop-out sits directly behind the
-        // transparent webview and becomes the actual app background.
-        previewBackground={
-          PREVIEW_CONFIG.preview || wallpaperFallback.active || !wallpaperHostReady
+        // Managed media renders inside the webview. A confirmed Wallpaper
+        // Engine source remains the one case that sits behind the transparent window.
+        backdrop={
+          wallpaperSettings.sourceMode !== "wallpaper-engine" ||
+          wallpaperFallback.active ||
+          !wallpaperHostReady ? (
+            <WallpaperBackdrop
+              active={wallpaperSettings.sourceMode === "library" ? activeWallpaper : null}
+              paused={display.mode === "sleep" || display.mode === "settings"}
+              onAssetError={
+                wallpaperSettings.sourceMode === "library" ? handleWallpaperAssetError : undefined
+              }
+            />
+          ) : undefined
         }
         hero={{
           time: heroTime.time,
@@ -1920,11 +2856,16 @@ export default function App() {
         }
         tasks={taskDisplays}
         scores={scoreDisplays}
+        primarySurface={
+          display.mode === "interactive"
+            ? interactivePrimarySurface
+            : display.mode === "celebration"
+              ? "clean"
+              : primaryGlanceSurface
+        }
         alarm={alarmDisplay}
         celebration={{
-          visible:
-            display.mode === "celebration" ||
-            (PREVIEW_CONFIG.preview && (display.mode === "glance" || display.mode === "awakening")),
+          visible: display.mode === "celebration",
         }}
         voice={{
           listening: voiceState === "recording",
@@ -1939,21 +2880,6 @@ export default function App() {
           onSettings: () => dispatchDisplay({ type: "OPEN_SETTINGS" }),
         }}
         onToggleTask={canInteract ? handleTaskToggle : undefined}
-        onAlarmEnabledChange={
-          upcomingAlarm
-            ? (enabled) => {
-                if (!enabled) {
-                  snoozedAlarmsRef.current.delete(upcomingAlarm.alarm.id);
-                }
-                setLocalData({
-                  ...localData,
-                  alarms: localData.alarms.map((item) =>
-                    item.id === upcomingAlarm.alarm.id ? { ...item, enabled } : item,
-                  ),
-                });
-              }
-            : undefined
-        }
         onSnoozeAlarm={activeAlarm ? () => void snoozeActiveAlarm() : undefined}
         onDismissAlarm={activeAlarm ? dismissActiveAlarm : undefined}
         onDismissCelebration={() => dispatchDisplay({ type: "CELEBRATION_FINISHED" })}
@@ -2013,6 +2939,8 @@ interface ExecuteCommandContext {
   setCommandMessage: (message: string) => void;
   setSceneLock: (lock: SceneLock) => void;
   setSceneMessage: (message: string) => void;
+  setPrimarySurface: (surface: PrimaryGlanceSurface) => void;
+  testScene: (scene: SceneKey) => Promise<WallpaperSceneResult>;
   snoozeActiveAlarm: (minutes: number) => boolean;
   triggerCelebration: () => void;
 }
@@ -2094,14 +3022,17 @@ async function executeAmbientCommand(
       return;
     }
     case "show-calendar":
+      context.setPrimarySurface("calendar");
       context.dispatchDisplay({ type: "ENTER_INTERACTIVE" });
       context.setCommandMessage("Showing today’s local-first calendar.");
       return;
     case "show-sports":
+      context.setPrimarySurface("clean");
       context.dispatchDisplay({ type: "ENTER_INTERACTIVE" });
       context.setCommandMessage("Showing the sports ribbon.");
       return;
     case "show-tasks":
+      context.setPrimarySurface("tasks");
       context.dispatchDisplay({ type: "ENTER_INTERACTIVE" });
       context.setCommandMessage("Showing today’s focus tasks.");
       return;
@@ -2121,9 +3052,13 @@ async function executeAmbientCommand(
       return;
     }
     case "test-scene": {
-      const result = await applyWallpaperScene(command.sceneKey, true);
+      const result = await context.testScene(command.sceneKey);
       context.setSceneMessage(result.message);
-      context.setCommandMessage(`Tested ${friendlySceneName(command.sceneKey)}.`);
+      context.setCommandMessage(
+        result.applied || result.duplicate || result.mocked
+          ? `Tested ${friendlySceneName(command.sceneKey)}.`
+          : result.message,
+      );
       return;
     }
     case "use-automatic-scene":
@@ -2322,7 +3257,14 @@ function readPreviewConfig(): PreviewConfig {
     offline: params.get("offline") === "1",
     debug: params.get("debug") === "1",
     reducedMotion: params.get("reduced-motion") === "1",
+    primarySurface: parsePrimarySurfaceParam(params.get("card")),
   };
+}
+
+function parsePrimarySurfaceParam(value: string | null): PrimaryGlanceSurface | undefined {
+  return value === "calendar" || value === "tasks" || value === "github" || value === "clean"
+    ? value
+    : undefined;
 }
 
 function parseWeatherParam(value: string | null): WeatherCondition | undefined {
@@ -2614,6 +3556,31 @@ function wallpaperStatusFromOperation(result: WallpaperSceneResult): ProviderSta
   return isTauriRuntime()
     ? { state: "error", message: result.message }
     : { state: "stale", message: result.message };
+}
+
+function unavailableWallpaperSceneResult(message: string): WallpaperSceneResult {
+  return {
+    applied: false,
+    duplicate: false,
+    mocked: false,
+    inApp: false,
+    message,
+  };
+}
+
+function wallpaperEngineSettingsMatch(left: WallpaperSettings, right: WallpaperSettings): boolean {
+  if (
+    left.executablePath !== right.executablePath ||
+    left.wallpaperFile !== right.wallpaperFile ||
+    left.overlayMonitorIndex !== right.overlayMonitorIndex
+  ) {
+    return false;
+  }
+  const sortedFiles = (settings: WallpaperSettings) =>
+    Object.entries(settings.wallpaperFiles).sort(([leftKey], [rightKey]) =>
+      leftKey.localeCompare(rightKey),
+    );
+  return JSON.stringify(sortedFiles(left)) === JSON.stringify(sortedFiles(right));
 }
 
 function wallpaperRetryDelay(retryCount: number): number | undefined {

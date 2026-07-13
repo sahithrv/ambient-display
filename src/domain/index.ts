@@ -8,3 +8,4 @@ export * from "./presence";
 export * from "./sports";
 export * from "./types";
 export * from "./weather";
+export * from "./wallpaperShuffle";

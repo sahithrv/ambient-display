@@ -8,6 +8,7 @@
 mod credentials;
 
 use std::{
+    collections::{HashMap, HashSet, VecDeque},
     fmt,
     io::{ErrorKind, Read, Write},
     net::{TcpListener, TcpStream},
@@ -24,7 +25,7 @@ use chrono::{
     DateTime, Datelike, Days, Duration as ChronoDuration, Local, LocalResult, NaiveDate,
     NaiveDateTime, NaiveTime, TimeZone,
 };
-use futures_util::StreamExt;
+use futures_util::{lock::Mutex as AsyncMutex, stream, StreamExt};
 use rand::{rngs::OsRng, RngCore};
 use reqwest::{
     header::{ACCEPT, CONTENT_LENGTH},
@@ -62,6 +63,14 @@ const MAX_TRANSCRIPTION_DURATION_MS: u32 = 60_000;
 const MAX_TRANSCRIPT_CHARS: usize = 8_000;
 const MAX_PROVIDER_RESPONSE_BYTES: u64 = 1024 * 1024;
 const MAX_NORMALIZED_SPORTS_EVENTS: usize = 64;
+const MAX_FAVORITE_SPORTS_TEAMS: usize = 8;
+const MAX_TEAM_SCHEDULE_EVENTS_PER_DIRECTION: usize = 3;
+const MAX_CONCURRENT_SPORTS_REQUESTS: usize = 4;
+// TheSportsDB's free tier allows 30 requests per minute. Keep two requests of
+// headroom and reserve an entire refresh before it starts so concurrent UI
+// actions cannot accidentally burst through the provider allowance.
+const SPORTS_PROVIDER_REQUEST_BUDGET: usize = 28;
+const SPORTS_PROVIDER_REQUEST_WINDOW: Duration = Duration::from_secs(60);
 const MAX_NORMALIZED_GOOGLE_EVENTS: usize = 64;
 const MAX_GOOGLE_EVENT_TITLE_CHARS: usize = 256;
 const MAX_GOOGLE_EVENT_DURATION_DAYS: i64 = 31;
@@ -153,9 +162,15 @@ pub struct SportsRefreshResponse {
 pub struct SportsEvent {
     pub id: String,
     pub sport: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub league_id: Option<String>,
     pub league: String,
     pub start_time: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home_team_id: Option<String>,
     pub home_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub away_team_id: Option<String>,
     pub away_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub home_badge_url: Option<String>,
@@ -312,6 +327,8 @@ pub struct ProviderService {
     credentials: CredentialStore,
     http: Option<Client>,
     cache: Mutex<ProviderCache>,
+    sports_refresh_gate: AsyncMutex<()>,
+    sports_request_times: Mutex<VecDeque<Instant>>,
     google_oauth_attempt: Mutex<Option<GoogleOAuthAttempt>>,
 }
 
@@ -335,6 +352,8 @@ impl ProviderService {
             credentials: CredentialStore,
             http,
             cache: Mutex::new(ProviderCache::default()),
+            sports_refresh_gate: AsyncMutex::new(()),
+            sports_request_times: Mutex::new(VecDeque::new()),
             google_oauth_attempt: Mutex::new(None),
         }
     }
@@ -375,29 +394,44 @@ impl ProviderService {
     pub async fn refresh_sports(
         &self,
         local_day: Option<&str>,
+        favorite_team_ids: Option<Vec<String>>,
     ) -> Result<SportsRefreshResponse, ProviderError> {
         let local_day = local_day
             .map(validate_local_day)
             .transpose()?
             .unwrap_or_else(today_in_local_timezone);
+        let favorite_team_ids = validate_favorite_team_ids(favorite_team_ids)?;
+        let cache_key = sports_cache_key(&local_day, &favorite_team_ids);
         let Some(api_key) = self.load_valid_secret(ProviderSecretSlot::SportsApiKey)? else {
             return Ok(mock_sports_response());
         };
 
-        if let Some(cached) = self.fresh_sports_cache(&local_day) {
+        if let Some(cached) = self.fresh_sports_cache(&cache_key) {
             return Ok(cached);
         }
 
-        match self.fetch_sports_events(api_key, &local_day).await {
+        // Serialize refreshes before reserving request credits. A second call
+        // for the same selection can then reuse the cache populated by the
+        // first call instead of spending another provider request.
+        let _refresh_guard = self.sports_refresh_gate.lock().await;
+        if let Some(cached) = self.fresh_sports_cache(&cache_key) {
+            return Ok(cached);
+        }
+        self.reserve_sports_requests(sports_refresh_request_count(favorite_team_ids.len()))?;
+
+        match self
+            .fetch_sports_events(api_key, &local_day, &favorite_team_ids)
+            .await
+        {
             Ok(response) => {
                 self.cache_lock().sports = Some(Cached {
-                    key: local_day,
+                    key: cache_key.clone(),
                     saved_at: Instant::now(),
                     value: response.clone(),
                 });
                 Ok(response)
             }
-            Err(error) => self.stale_sports_cache(&local_day).ok_or(error),
+            Err(error) => self.stale_sports_cache(&cache_key).ok_or(error),
         }
     }
 
@@ -904,41 +938,152 @@ impl ProviderService {
         &self,
         api_key: String,
         local_day: &str,
+        favorite_team_ids: &[String],
     ) -> Result<SportsRefreshResponse, ProviderError> {
-        // TheSportsDB's current v1 endpoint uses a key path segment. The key is
-        // strictly validated before storage/read and never appears in an error,
-        // log, response, or frontend network request.
-        let endpoint = format!("{SPORTS_DB_EVENTS_BY_DAY_URL}/{api_key}/eventsday.php");
-        let endpoint =
-            Url::parse(&endpoint).map_err(|_| provider_temporarily_unavailable("TheSportsDB"))?;
-        let response = self
-            .client()?
-            .get(endpoint)
-            .query(&[("d", local_day)])
-            .header(ACCEPT, "application/json")
-            .send()
-            .await
-            .map_err(|_| provider_temporarily_unavailable("TheSportsDB"))?;
-
-        if !response.status().is_success() {
-            return Err(provider_http_error("TheSportsDB", response.status()));
+        // The daily request retains broad ambient coverage. Each favorite ID
+        // adds exactly two fixed schedule calls; validation caps the total at
+        // 17 requests and this stream caps concurrent provider pressure at 4.
+        let mut requests: Vec<(String, String, String, Option<String>)> = vec![(
+            "eventsday.php".to_owned(),
+            "d".to_owned(),
+            local_day.to_owned(),
+            None,
+        )];
+        for team_id in favorite_team_ids {
+            requests.push((
+                "eventsnext.php".to_owned(),
+                "id".to_owned(),
+                team_id.clone(),
+                Some(team_id.clone()),
+            ));
+            requests.push((
+                "eventslast.php".to_owned(),
+                "id".to_owned(),
+                team_id.clone(),
+                Some(team_id.clone()),
+            ));
         }
-        let payload: TheSportsDbEventsResponse =
-            parse_bounded_json(response, "TheSportsDB").await?;
-        let events = payload
-            .events
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(normalize_sports_event)
-            .take(MAX_NORMALIZED_SPORTS_EVENTS)
-            .collect();
+
+        let mut results = stream::iter(requests.into_iter().enumerate().map(
+            |(index, (endpoint, query_name, query_value, expected_team_id))| {
+                let api_key = api_key.clone();
+                async move {
+                    (
+                        index,
+                        expected_team_id,
+                        self.fetch_sports_event_list(
+                            &api_key,
+                            &endpoint,
+                            &query_name,
+                            &query_value,
+                        )
+                        .await,
+                    )
+                }
+            },
+        ))
+        .buffer_unordered(MAX_CONCURRENT_SPORTS_REQUESTS)
+        .collect::<Vec<_>>()
+        .await;
+        results.sort_by_key(|(index, _, _)| *index);
+
+        let mut favorite_events = Vec::new();
+        let mut daily_events = Vec::new();
+        let mut first_error = None;
+        let mut successful_requests = 0usize;
+        let mut failed_requests = 0usize;
+        for (_, expected_team_id, result) in results {
+            match result {
+                Ok(events) => {
+                    successful_requests += 1;
+                    if let Some(expected_team_id) = expected_team_id {
+                        favorite_events.extend(
+                            events
+                                .into_iter()
+                                .filter(|event| sports_event_has_team(event, &expected_team_id))
+                                .take(MAX_TEAM_SCHEDULE_EVENTS_PER_DIRECTION),
+                        );
+                    } else {
+                        daily_events.extend(events);
+                    }
+                }
+                Err(error) => {
+                    failed_requests += 1;
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        if successful_requests == 0 {
+            return Err(
+                first_error.unwrap_or_else(|| provider_temporarily_unavailable("TheSportsDB"))
+            );
+        }
+
+        // Favorite schedules enter first so a large premium daily feed cannot
+        // evict the teams the user explicitly selected. A more informative
+        // daily duplicate (for example a live score) replaces its schedule copy.
+        let mut events = Vec::new();
+        let mut indexes = HashMap::new();
+        for event in favorite_events {
+            merge_sports_event(&mut events, &mut indexes, event);
+        }
+        for event in daily_events {
+            merge_sports_event(&mut events, &mut indexes, event);
+        }
+        events.truncate(MAX_NORMALIZED_SPORTS_EVENTS);
+
+        let message = if favorite_team_ids.is_empty() {
+            "Sports events refreshed.".to_owned()
+        } else if failed_requests == 0 {
+            "Sports events and favorite-team schedules refreshed.".to_owned()
+        } else {
+            format!(
+                "Sports refreshed with {failed_requests} temporarily unavailable schedule request(s)."
+            )
+        };
 
         Ok(SportsRefreshResponse {
             mode: ProviderMode::Native,
             events,
             stale: false,
-            message: "Sports events refreshed.".to_owned(),
+            message,
         })
+    }
+
+    async fn fetch_sports_event_list(
+        &self,
+        api_key: &str,
+        endpoint_name: &str,
+        query_name: &str,
+        query_value: &str,
+    ) -> Result<Vec<SportsEvent>, ProviderError> {
+        // v1 places its key in the path. The key is validated before use and
+        // neither the request URL nor provider error body crosses this boundary.
+        let endpoint = format!("{SPORTS_DB_EVENTS_BY_DAY_URL}/{api_key}/{endpoint_name}");
+        let endpoint =
+            Url::parse(&endpoint).map_err(|_| provider_temporarily_unavailable("TheSportsDB"))?;
+        let response = self
+            .client()?
+            .get(endpoint)
+            .query(&[(query_name, query_value)])
+            .header(ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(|_| provider_temporarily_unavailable("TheSportsDB"))?;
+        if !response.status().is_success() {
+            return Err(provider_http_error("TheSportsDB", response.status()));
+        }
+        let payload: TheSportsDbEventsResponse =
+            parse_bounded_json(response, "TheSportsDB").await?;
+        Ok(payload
+            .events
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(normalize_sports_event)
+            .take(MAX_NORMALIZED_SPORTS_EVENTS)
+            .collect())
     }
 
     async fn fetch_openai_transcription(
@@ -1253,6 +1398,14 @@ impl ProviderService {
             Ok(cache) => cache,
             Err(poisoned) => poisoned.into_inner(),
         }
+    }
+
+    fn reserve_sports_requests(&self, request_count: usize) -> Result<(), ProviderError> {
+        let mut reservations = match self.sports_request_times.lock() {
+            Ok(reservations) => reservations,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        reserve_sports_request_budget(&mut reservations, Instant::now(), request_count)
     }
 
     fn google_oauth_attempt_lock(&self) -> MutexGuard<'_, Option<GoogleOAuthAttempt>> {
@@ -1698,9 +1851,12 @@ fn mock_sports_response() -> SportsRefreshResponse {
             SportsEvent {
                 id: "mock-live-1".to_owned(),
                 sport: "Basketball".to_owned(),
+                league_id: Some("4387".to_owned()),
                 league: "NBA".to_owned(),
                 start_time: "2026-05-11T19:20:00Z".to_owned(),
+                home_team_id: Some("133600".to_owned()),
                 home_name: "Golden State".to_owned(),
+                away_team_id: Some("134860".to_owned()),
                 away_name: "Phoenix".to_owned(),
                 home_badge_url: None,
                 away_badge_url: None,
@@ -1712,9 +1868,12 @@ fn mock_sports_response() -> SportsRefreshResponse {
             SportsEvent {
                 id: "mock-upcoming-1".to_owned(),
                 sport: "Baseball".to_owned(),
+                league_id: Some("4424".to_owned()),
                 league: "MLB".to_owned(),
                 start_time: "2026-05-11T19:10:00Z".to_owned(),
+                home_team_id: Some("135254".to_owned()),
                 home_name: "San Francisco".to_owned(),
+                away_team_id: Some("135267".to_owned()),
                 away_name: "Los Angeles".to_owned(),
                 home_badge_url: None,
                 away_badge_url: None,
@@ -1824,6 +1983,70 @@ fn validate_local_day(value: &str) -> Result<String, ProviderError> {
         });
     }
     Ok(value.to_owned())
+}
+
+fn validate_favorite_team_ids(values: Option<Vec<String>>) -> Result<Vec<String>, ProviderError> {
+    let values = values.unwrap_or_default();
+    if values.len() > MAX_FAVORITE_SPORTS_TEAMS {
+        return Err(ProviderError::Validation {
+            field: "favoriteTeamIds",
+            message: format!(
+                "Choose no more than {MAX_FAVORITE_SPORTS_TEAMS} favorite sports teams."
+            ),
+        });
+    }
+
+    let mut normalized = Vec::with_capacity(values.len());
+    let mut seen = HashSet::with_capacity(values.len());
+    for value in values {
+        if value.is_empty() || value.len() > 32 || !value.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(ProviderError::Validation {
+                field: "favoriteTeamIds",
+                message: "Sports team IDs must contain digits only.".to_owned(),
+            });
+        }
+        if seen.insert(value.clone()) {
+            normalized.push(value);
+        }
+    }
+    Ok(normalized)
+}
+
+fn sports_cache_key(local_day: &str, favorite_team_ids: &[String]) -> String {
+    let mut team_ids = favorite_team_ids.to_vec();
+    team_ids.sort();
+    format!("{local_day}:{}", team_ids.join(","))
+}
+
+fn sports_refresh_request_count(favorite_team_count: usize) -> usize {
+    1usize.saturating_add(favorite_team_count.saturating_mul(2))
+}
+
+fn reserve_sports_request_budget(
+    reservations: &mut VecDeque<Instant>,
+    now: Instant,
+    request_count: usize,
+) -> Result<(), ProviderError> {
+    while reservations.front().is_some_and(|reserved_at| {
+        now.saturating_duration_since(*reserved_at) >= SPORTS_PROVIDER_REQUEST_WINDOW
+    }) {
+        reservations.pop_front();
+    }
+
+    if request_count > SPORTS_PROVIDER_REQUEST_BUDGET
+        || reservations.len().saturating_add(request_count) > SPORTS_PROVIDER_REQUEST_BUDGET
+    {
+        return Err(ProviderError::Unavailable {
+            provider: "TheSportsDB",
+            message: "Sports refresh is cooling down to stay within the provider request limit. Try again in about a minute."
+                .to_owned(),
+            retryable: true,
+        });
+    }
+
+    reservations.extend(std::iter::repeat(now).take(request_count));
+    Ok(())
 }
 
 fn today_in_local_timezone() -> String {
@@ -1981,6 +2204,8 @@ struct TheSportsDbEvent {
     id: Option<String>,
     #[serde(rename = "strSport")]
     sport: Option<String>,
+    #[serde(rename = "idLeague")]
+    league_id: Option<String>,
     #[serde(rename = "strLeague")]
     league: Option<String>,
     #[serde(rename = "dateEvent")]
@@ -1989,8 +2214,12 @@ struct TheSportsDbEvent {
     time: Option<String>,
     #[serde(rename = "strTimestamp")]
     timestamp: Option<String>,
+    #[serde(rename = "idHomeTeam")]
+    home_team_id: Option<String>,
     #[serde(rename = "strHomeTeam")]
     home_name: Option<String>,
+    #[serde(rename = "idAwayTeam")]
+    away_team_id: Option<String>,
     #[serde(rename = "strAwayTeam")]
     away_name: Option<String>,
     #[serde(rename = "strHomeTeamBadge")]
@@ -2076,8 +2305,11 @@ impl GoogleCalendarWriteTime {
 fn normalize_sports_event(event: TheSportsDbEvent) -> Option<SportsEvent> {
     let id = normalized_text(event.id, 128)?;
     let sport = normalized_text(event.sport, 96)?;
+    let league_id = normalized_provider_id(event.league_id);
     let league = normalized_text(event.league, 128)?;
+    let home_team_id = normalized_provider_id(event.home_team_id);
     let home_name = normalized_text(event.home_name, 128)?;
+    let away_team_id = normalized_provider_id(event.away_team_id);
     let away_name = normalized_text(event.away_name, 128)?;
     let start_time = normalized_start_time(event.timestamp, event.date, event.time)?;
     let source_status = normalized_text(event.status, 96).unwrap_or_default();
@@ -2090,17 +2322,55 @@ fn normalize_sports_event(event: TheSportsDbEvent) -> Option<SportsEvent> {
     Some(SportsEvent {
         id,
         sport,
+        league_id,
         league,
         start_time,
+        home_team_id,
         home_name,
+        away_team_id,
         away_name,
-        home_badge_url: safe_http_url(event.home_badge_url),
-        away_badge_url: safe_http_url(event.away_badge_url),
+        home_badge_url: safe_https_url(event.home_badge_url),
+        away_badge_url: safe_https_url(event.away_badge_url),
         home_score: normalized_score(event.home_score),
         away_score: normalized_score(event.away_score),
         status,
         clock_or_period,
     })
+}
+
+fn merge_sports_event(
+    events: &mut Vec<SportsEvent>,
+    indexes: &mut HashMap<String, usize>,
+    event: SportsEvent,
+) {
+    if let Some(index) = indexes.get(&event.id).copied() {
+        if sports_event_detail_score(&event) > sports_event_detail_score(&events[index]) {
+            events[index] = event;
+        }
+        return;
+    }
+    indexes.insert(event.id.clone(), events.len());
+    events.push(event);
+}
+
+fn sports_event_has_team(event: &SportsEvent, team_id: &str) -> bool {
+    event.home_team_id.as_deref() == Some(team_id) || event.away_team_id.as_deref() == Some(team_id)
+}
+
+fn sports_event_detail_score(event: &SportsEvent) -> u16 {
+    let status = match event.status {
+        SportsEventStatus::Scheduled => 1,
+        SportsEventStatus::Postponed | SportsEventStatus::Cancelled => 2,
+        SportsEventStatus::Live => 3,
+        SportsEventStatus::Final => 4,
+    };
+    status * 16
+        + u16::from(event.home_score.is_some())
+        + u16::from(event.away_score.is_some())
+        + u16::from(event.clock_or_period.is_some())
+        + u16::from(event.home_team_id.is_some())
+        + u16::from(event.away_team_id.is_some())
+        + u16::from(event.league_id.is_some())
 }
 
 fn normalize_google_calendar_event(event: GoogleCalendarApiEvent) -> Option<GoogleCalendarEvent> {
@@ -2156,6 +2426,14 @@ fn normalized_text(value: Option<String>, max_chars: usize) -> Option<String> {
     Some(value)
 }
 
+fn normalized_provider_id(value: Option<String>) -> Option<String> {
+    let value = normalized_text(value, 32)?;
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+        .then_some(value)
+}
+
 fn normalized_start_time(
     timestamp: Option<String>,
     date: Option<String>,
@@ -2194,10 +2472,10 @@ fn normalized_score(value: Option<Value>) -> Option<u32> {
     u32::try_from(score).ok().filter(|score| *score <= 9_999)
 }
 
-fn safe_http_url(value: Option<String>) -> Option<String> {
+fn safe_https_url(value: Option<String>) -> Option<String> {
     let value = normalized_text(value, 2_048)?;
     let parsed = Url::parse(&value).ok()?;
-    if !matches!(parsed.scheme(), "https" | "http")
+    if parsed.scheme() != "https"
         || parsed.host_str().is_none()
         || !parsed.username().is_empty()
         || parsed.password().is_some()
@@ -2260,11 +2538,14 @@ fn normalized_clock_or_period(
 mod tests {
     use super::{
         google_authorization_url, google_calendar_create_payload, normalize_google_calendar_event,
-        normalize_sports_event, validate_local_day, GoogleCalendarApiEvent, GoogleCalendarApiTime,
-        GoogleCalendarEventCreateRequest, ProviderError, SportsEventStatus, TheSportsDbEvent,
-        GOOGLE_CALENDAR_SCOPE,
+        normalize_sports_event, reserve_sports_request_budget, safe_https_url, sports_cache_key,
+        sports_refresh_request_count, validate_favorite_team_ids, validate_local_day,
+        GoogleCalendarApiEvent, GoogleCalendarApiTime, GoogleCalendarEventCreateRequest,
+        ProviderError, SportsEventStatus, TheSportsDbEvent, GOOGLE_CALENDAR_SCOPE,
+        SPORTS_PROVIDER_REQUEST_BUDGET, SPORTS_PROVIDER_REQUEST_WINDOW,
     };
     use serde_json::json;
+    use std::{collections::VecDeque, time::Instant};
 
     #[test]
     fn local_day_validation_checks_calendar_boundaries() {
@@ -2279,11 +2560,14 @@ mod tests {
         let event = TheSportsDbEvent {
             id: Some("fixture-1".to_owned()),
             sport: Some("Basketball".to_owned()),
+            league_id: Some("4387".to_owned()),
             league: Some("NBA".to_owned()),
             date: Some("2026-05-11".to_owned()),
             time: Some("19:20:00".to_owned()),
             timestamp: None,
+            home_team_id: Some("133600".to_owned()),
             home_name: Some("Warriors".to_owned()),
+            away_team_id: Some("134860".to_owned()),
             away_name: Some("Lakers".to_owned()),
             home_badge_url: Some("javascript:alert(1)".to_owned()),
             away_badge_url: Some("https://images.example.test/lakers.png".to_owned()),
@@ -2297,10 +2581,81 @@ mod tests {
         let normalized = normalize_sports_event(event).expect("valid provider fixture");
         assert_eq!(normalized.status, SportsEventStatus::Live);
         assert_eq!(normalized.start_time, "2026-05-11T19:20:00Z");
+        assert_eq!(normalized.league_id.as_deref(), Some("4387"));
+        assert_eq!(normalized.home_team_id.as_deref(), Some("133600"));
+        assert_eq!(normalized.away_team_id.as_deref(), Some("134860"));
         assert_eq!(normalized.home_badge_url, None);
         assert_eq!(
             normalized.away_badge_url.as_deref(),
             Some("https://images.example.test/lakers.png")
+        );
+    }
+
+    #[test]
+    fn favorite_team_ids_are_bounded_numeric_and_cache_order_independent() {
+        let ids = validate_favorite_team_ids(Some(vec![
+            "134860".to_owned(),
+            "133600".to_owned(),
+            "134860".to_owned(),
+        ]))
+        .expect("numeric team IDs should validate");
+        assert_eq!(ids, vec!["134860", "133600"]);
+        assert_eq!(
+            sports_cache_key("2026-07-12", &ids),
+            sports_cache_key("2026-07-12", &["133600".to_owned(), "134860".to_owned()])
+        );
+        assert!(validate_favorite_team_ids(Some(vec!["team/unsafe".to_owned()])).is_err());
+        assert!(validate_favorite_team_ids(Some(
+            (0..9).map(|index| format!("13{index:04}")).collect()
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn sports_request_budget_reserves_a_whole_refresh_and_recovers_after_window() {
+        let now = Instant::now();
+        let mut reservations = VecDeque::new();
+        let maximum_refresh = sports_refresh_request_count(8);
+        assert_eq!(maximum_refresh, 17);
+
+        reserve_sports_request_budget(&mut reservations, now, maximum_refresh)
+            .expect("one maximum-size refresh should fit");
+        reserve_sports_request_budget(
+            &mut reservations,
+            now,
+            SPORTS_PROVIDER_REQUEST_BUDGET - maximum_refresh,
+        )
+        .expect("the remaining conservative allowance should fit");
+        assert!(matches!(
+            reserve_sports_request_budget(&mut reservations, now, 1),
+            Err(ProviderError::Unavailable {
+                provider: "TheSportsDB",
+                retryable: true,
+                ..
+            })
+        ));
+
+        let after_window = now + SPORTS_PROVIDER_REQUEST_WINDOW;
+        reserve_sports_request_budget(&mut reservations, after_window, maximum_refresh)
+            .expect("expired reservations should release request credits");
+        assert_eq!(reservations.len(), maximum_refresh);
+    }
+
+    #[test]
+    fn sports_badge_urls_require_https_without_embedded_credentials() {
+        assert_eq!(
+            safe_https_url(Some("https://images.example.test/team.png".to_owned())).as_deref(),
+            Some("https://images.example.test/team.png")
+        );
+        assert_eq!(
+            safe_https_url(Some("http://images.example.test/team.png".to_owned())),
+            None
+        );
+        assert_eq!(
+            safe_https_url(Some(
+                "https://user:password@images.example.test/team.png".to_owned()
+            )),
+            None
         );
     }
 

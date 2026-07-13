@@ -1,10 +1,19 @@
 import type { SceneKey, SceneLock } from "../domain";
 import { isTauriRuntime } from "./tauri";
-import type { WallpaperFallbackState, WallpaperSettings } from "./types";
+import type {
+  WallpaperFallbackState,
+  WallpaperLibraryPreferences,
+  WallpaperSettings,
+  WallpaperSourceMode,
+} from "./types";
 
 const BROWSER_STORAGE_KEY = "ambient-glass.wallpaper-settings.v1";
 const STORE_FILE = "ambient-glass.json";
 const STORE_KEY = "wallpaper-settings";
+
+export const DEFAULT_WALLPAPER_SHUFFLE_INTERVAL_MINUTES = 15;
+export const MIN_WALLPAPER_SHUFFLE_INTERVAL_MINUTES = 5;
+export const MAX_WALLPAPER_SHUFFLE_INTERVAL_MINUTES = 1_440;
 
 export const WALLPAPER_SCENE_KEYS = [
   "clear.dawn",
@@ -28,11 +37,21 @@ export interface WallpaperSettingsValidation {
 
 export function createDefaultWallpaperSettings(): WallpaperSettings {
   return {
-    version: 2,
+    version: 3,
+    sourceMode: "library",
     overlayMonitorIndex: 0,
     wallpaperFiles: {},
     sceneLock: { mode: "automatic" },
+    library: createDefaultWallpaperLibraryPreferences(),
     fallbackMode: "automatic",
+  };
+}
+
+export function createDefaultWallpaperLibraryPreferences(): WallpaperLibraryPreferences {
+  return {
+    playbackMode: "shuffle",
+    enabledIds: [],
+    shuffleIntervalMinutes: DEFAULT_WALLPAPER_SHUFFLE_INTERVAL_MINUTES,
   };
 }
 
@@ -57,14 +76,23 @@ export function normalizeWallpaperSettings(value: unknown): WallpaperSettings {
     }
   }
 
+  const safeWallpaperFile =
+    wallpaperFile && isSafeWallpaperFile(wallpaperFile) ? wallpaperFile : undefined;
+  const sourceMode = normalizeSourceMode(
+    record,
+    Boolean(safeWallpaperFile || Object.keys(wallpaperFiles).length > 0),
+  );
+
   return {
-    version: 2,
+    version: 3,
+    sourceMode,
     executablePath: executablePath && isSafePathValue(executablePath) ? executablePath : undefined,
-    wallpaperFile: wallpaperFile && isSafeWallpaperFile(wallpaperFile) ? wallpaperFile : undefined,
+    wallpaperFile: safeWallpaperFile,
     overlayMonitorIndex,
     wallpaperFiles,
     sceneLock: normalizeSceneLock(record.sceneLock),
-    fallbackMode: record.fallbackMode === "force-internal" ? "force-internal" : "automatic",
+    library: normalizeWallpaperLibraryPreferences(record.library),
+    fallbackMode: sourceMode === "internal" ? "force-internal" : "automatic",
   };
 }
 
@@ -95,7 +123,81 @@ export function validateWallpaperSettings(
       };
     }
   }
+  if (!isWallpaperSourceMode(settings.sourceMode)) {
+    return { valid: false, message: "Choose a valid wallpaper source." };
+  }
+  if (
+    !Number.isInteger(settings.library.shuffleIntervalMinutes) ||
+    settings.library.shuffleIntervalMinutes < MIN_WALLPAPER_SHUFFLE_INTERVAL_MINUTES ||
+    settings.library.shuffleIntervalMinutes > MAX_WALLPAPER_SHUFFLE_INTERVAL_MINUTES
+  ) {
+    return {
+      valid: false,
+      message: `Choose a shuffle interval from ${MIN_WALLPAPER_SHUFFLE_INTERVAL_MINUTES} to ${MAX_WALLPAPER_SHUFFLE_INTERVAL_MINUTES} minutes.`,
+    };
+  }
+  if (
+    settings.library.selectedId !== undefined &&
+    !isWallpaperAssetId(settings.library.selectedId)
+  ) {
+    return { valid: false, message: "The selected wallpaper is invalid." };
+  }
+  if (settings.library.enabledIds.some((id) => !isWallpaperAssetId(id))) {
+    return { valid: false, message: "The wallpaper shuffle selection is invalid." };
+  }
   return { valid: true };
+}
+
+/** Keeps only library identifiers that still exist after a scan or deletion. */
+export function reconcileWallpaperSettingsWithLibrary<T extends { id: string }>(
+  settings: WallpaperSettings,
+  library: { items: readonly T[] },
+): WallpaperSettings {
+  const available = new Set(library.items.map((item) => item.id));
+  const enabledIds = settings.library.enabledIds.filter((id) => available.has(id));
+  const selectedId =
+    settings.library.selectedId && available.has(settings.library.selectedId)
+      ? settings.library.selectedId
+      : (enabledIds[0] ?? library.items[0]?.id);
+  return {
+    ...settings,
+    library: {
+      ...settings.library,
+      enabledIds,
+      selectedId,
+    },
+  };
+}
+
+/** Enables newly imported media and makes the first imported item visible immediately. */
+export function withImportedWallpapersEnabled(
+  settings: WallpaperSettings,
+  importedIds: readonly string[],
+): WallpaperSettings {
+  const safeImportedIds = importedIds.filter(isWallpaperAssetId);
+  if (safeImportedIds.length === 0) {
+    return settings;
+  }
+  return {
+    ...withWallpaperSourceMode(settings, "library"),
+    library: {
+      ...settings.library,
+      selectedId: safeImportedIds[0],
+      enabledIds: Array.from(new Set([...settings.library.enabledIds, ...safeImportedIds])),
+    },
+  };
+}
+
+/** Maintains the compatibility fallback flag while sourceMode becomes explicit. */
+export function withWallpaperSourceMode(
+  settings: WallpaperSettings,
+  sourceMode: WallpaperSourceMode,
+): WallpaperSettings {
+  return {
+    ...settings,
+    sourceMode,
+    fallbackMode: sourceMode === "internal" ? "force-internal" : "automatic",
+  };
 }
 
 /** Browser storage remains a safe fallback if the Tauri Store plugin is unavailable. */
@@ -142,13 +244,23 @@ export function deriveWallpaperFallback(
   settings: WallpaperSettings,
   native: { available: boolean; message: string } | null,
   nativeRuntime = isTauriRuntime(),
+  hasUsableLibraryAsset = false,
 ): WallpaperFallbackState {
-  if (settings.fallbackMode === "force-internal") {
+  if (settings.sourceMode === "internal" || settings.fallbackMode === "force-internal") {
     return {
       active: true,
-      mode: settings.fallbackMode,
+      mode: "force-internal",
       reason: "Internal fallback selected in settings.",
     };
+  }
+  if (settings.sourceMode === "library") {
+    return hasUsableLibraryAsset
+      ? { active: false, mode: "automatic" }
+      : {
+          active: true,
+          mode: "automatic",
+          reason: "Add an image or video to the wallpaper library.",
+        };
   }
   if (!settings.wallpaperFile && Object.keys(settings.wallpaperFiles).length === 0) {
     return {
@@ -161,6 +273,60 @@ export function deriveWallpaperFallback(
     return { active: true, mode: settings.fallbackMode, reason: native.message };
   }
   return { active: false, mode: settings.fallbackMode };
+}
+
+function normalizeWallpaperLibraryPreferences(value: unknown): WallpaperLibraryPreferences {
+  const defaults = createDefaultWallpaperLibraryPreferences();
+  const record = asRecord(value);
+  if (!record) {
+    return defaults;
+  }
+  const selectedId = stringValue(record.selectedId);
+  const enabledIds = Array.isArray(record.enabledIds)
+    ? Array.from(
+        new Set(
+          record.enabledIds.filter(
+            (candidate): candidate is string =>
+              typeof candidate === "string" && isWallpaperAssetId(candidate),
+          ),
+        ),
+      )
+    : defaults.enabledIds;
+  return {
+    playbackMode: record.playbackMode === "single" ? "single" : "shuffle",
+    selectedId: selectedId && isWallpaperAssetId(selectedId) ? selectedId : undefined,
+    enabledIds,
+    shuffleIntervalMinutes:
+      integerInRange(
+        record.shuffleIntervalMinutes,
+        MIN_WALLPAPER_SHUFFLE_INTERVAL_MINUTES,
+        MAX_WALLPAPER_SHUFFLE_INTERVAL_MINUTES,
+      ) ?? defaults.shuffleIntervalMinutes,
+  };
+}
+
+function normalizeSourceMode(
+  record: Record<string, unknown>,
+  hasWallpaperEngineConfiguration: boolean,
+): WallpaperSourceMode {
+  if (record.fallbackMode === "force-internal") {
+    return "internal";
+  }
+  if (record.version === 3 && isWallpaperSourceMode(record.sourceMode)) {
+    // `fallbackMode: automatic` is how the v2 checkbox communicates that an
+    // old forced fallback was turned off. Invariant: explicit internal mode
+    // always carries `force-internal`.
+    return record.sourceMode === "internal" ? "library" : record.sourceMode;
+  }
+  return hasWallpaperEngineConfiguration ? "wallpaper-engine" : "library";
+}
+
+function isWallpaperSourceMode(value: unknown): value is WallpaperSourceMode {
+  return value === "library" || value === "wallpaper-engine" || value === "internal";
+}
+
+export function isWallpaperAssetId(value: string): boolean {
+  return /^[a-f0-9]{64}$/.test(value);
 }
 
 function readBrowserSettings(): WallpaperSettings {

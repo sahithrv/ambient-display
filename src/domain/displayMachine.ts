@@ -97,9 +97,7 @@ export function transitionDisplay(
   // the web state needs to make the same transition without waiting for a
   // presence sample.
   if (event.type === "ENTER_INTERACTIVE") {
-    return state.mode === "alarm" || state.mode === "interactive"
-      ? state
-      : enter(state, "interactive", now);
+    return state.mode === "alarm" ? state : enter(state, "interactive", now);
   }
 
   if (event.type === "OPEN_SETTINGS") {

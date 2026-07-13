@@ -1,4 +1,8 @@
-import type { WallpaperEngineSettingsInput } from "./types";
+import type {
+  NativeWallpaperLibrarySnapshot,
+  WallpaperEngineSettingsInput,
+  WallpaperImportResult,
+} from "./types";
 
 export type NativeShortcutAction = "toggle" | "interactive" | "debug" | "settings";
 
@@ -65,9 +69,27 @@ export async function invokeTauriResult<T>(
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "The native action could not be completed.",
+      message: nativeInvocationErrorMessage(error),
     };
   }
+}
+
+function nativeInvocationErrorMessage(error: unknown): string {
+  const candidate =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : typeof error === "object" && error !== null && "message" in error
+          ? (error as { message?: unknown }).message
+          : undefined;
+  if (typeof candidate !== "string") {
+    return "The native action could not be completed.";
+  }
+  const message = candidate.normalize("NFKC").trim().replace(/\s+/g, " ");
+  return message.length > 0 && message.length <= 512
+    ? message
+    : "The native action could not be completed.";
 }
 
 /** Browser callers retain the convenient mock-safe nullable shape. */
@@ -156,8 +178,32 @@ export async function testWallpaperScene(scene: string): Promise<WallpaperSceneR
   return applyWallpaperScene(scene, true);
 }
 
-export async function closeInAppWallpaper(): Promise<void> {
-  await invokeTauri("close_in_app_wallpaper");
+export async function closeInAppWallpaper(): Promise<TauriInvocation<void>> {
+  return invokeTauriResult<void>("close_in_app_wallpaper");
+}
+
+/** Lists only validated app-owned copies; original import paths are never returned. */
+export async function listNativeWallpaperLibrary(): Promise<
+  TauriInvocation<NativeWallpaperLibrarySnapshot>
+> {
+  return invokeTauriResult<NativeWallpaperLibrarySnapshot>("list_wallpaper_library");
+}
+
+/** Native picker + import boundary; source paths never enter renderer memory. */
+export async function pickAndImportNativeWallpapers(): Promise<
+  TauriInvocation<WallpaperImportResult | null>
+> {
+  return invokeTauriResult<WallpaperImportResult | null>("pick_and_import_wallpapers");
+}
+
+export async function deleteNativeWallpaperAsset(
+  id: string,
+): Promise<TauriInvocation<NativeWallpaperLibrarySnapshot>> {
+  return invokeTauriResult<NativeWallpaperLibrarySnapshot>("delete_wallpaper_asset", { id });
+}
+
+export async function revealNativeWallpaperLibrary(): Promise<TauriInvocation<void>> {
+  return invokeTauriResult<void>("reveal_wallpaper_library");
 }
 
 /** Reads only platform display labels and dimensions for the settings picker. */

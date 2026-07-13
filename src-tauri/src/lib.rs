@@ -15,6 +15,7 @@ use tauri::Manager;
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(wallpaper::WallpaperEngineController::default())
+        .manage(wallpaper::WallpaperLibraryController::default())
         .manage(windowing::DisplayWindowState::default())
         .manage(providers::ProviderService::new())
         // Store is for non-secret UI settings only. Provider credentials use
@@ -25,6 +26,7 @@ pub fn run() {
         // OAuth uses the operating system's default browser; no consent page
         // is ever embedded in or exposed to the webview.
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         // Only structured, fixed-field events are logged. Never log settings
         // values, paths, provider tokens, or arbitrary webview input.
         .plugin(
@@ -52,6 +54,10 @@ pub fn run() {
             commands::wallpaper::apply_wallpaper_scene,
             commands::wallpaper::test_wallpaper_scene,
             commands::wallpaper::close_in_app_wallpaper,
+            commands::wallpaper::list_wallpaper_library,
+            commands::wallpaper::pick_and_import_wallpapers,
+            commands::wallpaper::delete_wallpaper_asset,
+            commands::wallpaper::reveal_wallpaper_library,
             commands::providers::get_github_commits,
             commands::providers::refresh_sports,
             commands::providers::transcribe_audio,
