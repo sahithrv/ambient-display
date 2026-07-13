@@ -361,6 +361,12 @@
           "markdownDescription": "Enables the delete_provider_secret command without any pre-configured scope."
         },
         {
+          "description": "Enables the delete_wallpaper_asset command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-wallpaper-asset",
+          "markdownDescription": "Enables the delete_wallpaper_asset command without any pre-configured scope."
+        },
+        {
           "description": "Enables the disconnect_google_calendar command without any pre-configured scope.",
           "type": "string",
           "const": "allow-disconnect-google-calendar",
@@ -421,10 +427,22 @@
           "markdownDescription": "Enables the list_native_alarms command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_wallpaper_library command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-wallpaper-library",
+          "markdownDescription": "Enables the list_wallpaper_library command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mark_overlay_ready command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mark-overlay-ready",
           "markdownDescription": "Enables the mark_overlay_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pick_and_import_wallpapers command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pick-and-import-wallpapers",
+          "markdownDescription": "Enables the pick_and_import_wallpapers command without any pre-configured scope."
         },
         {
           "description": "Enables the quit_application command without any pre-configured scope.",
@@ -437,6 +455,12 @@
           "type": "string",
           "const": "allow-refresh-sports",
           "markdownDescription": "Enables the refresh_sports command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reveal_wallpaper_library command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reveal-wallpaper-library",
+          "markdownDescription": "Enables the reveal_wallpaper_library command without any pre-configured scope."
         },
         {
           "description": "Enables the save_provider_secret command without any pre-configured scope.",
@@ -529,6 +553,12 @@
           "markdownDescription": "Denies the delete_provider_secret command without any pre-configured scope."
         },
         {
+          "description": "Denies the delete_wallpaper_asset command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-wallpaper-asset",
+          "markdownDescription": "Denies the delete_wallpaper_asset command without any pre-configured scope."
+        },
+        {
           "description": "Denies the disconnect_google_calendar command without any pre-configured scope.",
           "type": "string",
           "const": "deny-disconnect-google-calendar",
@@ -589,10 +619,22 @@
           "markdownDescription": "Denies the list_native_alarms command without any pre-configured scope."
         },
         {
+          "description": "Denies the list_wallpaper_library command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-wallpaper-library",
+          "markdownDescription": "Denies the list_wallpaper_library command without any pre-configured scope."
+        },
+        {
           "description": "Denies the mark_overlay_ready command without any pre-configured scope.",
           "type": "string",
           "const": "deny-mark-overlay-ready",
           "markdownDescription": "Denies the mark_overlay_ready command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_and_import_wallpapers command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pick-and-import-wallpapers",
+          "markdownDescription": "Denies the pick_and_import_wallpapers command without any pre-configured scope."
         },
         {
           "description": "Denies the quit_application command without any pre-configured scope.",
@@ -605,6 +647,12 @@
           "type": "string",
           "const": "deny-refresh-sports",
           "markdownDescription": "Denies the refresh_sports command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reveal_wallpaper_library command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reveal-wallpaper-library",
+          "markdownDescription": "Denies the reveal_wallpaper_library command without any pre-configured scope."
         },
         {
           "description": "Denies the save_provider_secret command without any pre-configured scope.",
@@ -2711,6 +2759,72 @@
           "type": "string",
           "const": "core:window:deny-unminimize",
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
+        },
+        {
+          "description": "This permission set configures the types of dialogs\navailable from the dialog plugin.\n\n#### Granted Permissions\n\nAll dialog types are enabled.\n\n\n\n#### This default permission set includes:\n\n- `allow-message`\n- `allow-save`\n- `allow-open`",
+          "type": "string",
+          "const": "dialog:default",
+          "markdownDescription": "This permission set configures the types of dialogs\navailable from the dialog plugin.\n\n#### Granted Permissions\n\nAll dialog types are enabled.\n\n\n\n#### This default permission set includes:\n\n- `allow-message`\n- `allow-save`\n- `allow-open`"
+        },
+        {
+          "description": "Enables the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:allow-ask",
+          "markdownDescription": "Enables the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)"
+        },
+        {
+          "description": "Enables the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:allow-confirm",
+          "markdownDescription": "Enables the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)"
+        },
+        {
+          "description": "Enables the message command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:allow-message",
+          "markdownDescription": "Enables the message command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:allow-open",
+          "markdownDescription": "Enables the open command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:allow-save",
+          "markdownDescription": "Enables the save command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:deny-ask",
+          "markdownDescription": "Denies the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)"
+        },
+        {
+          "description": "Denies the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)",
+          "type": "string",
+          "const": "dialog:deny-confirm",
+          "markdownDescription": "Denies the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)"
+        },
+        {
+          "description": "Denies the message command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:deny-message",
+          "markdownDescription": "Denies the message command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:deny-open",
+          "markdownDescription": "Denies the open command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save command without any pre-configured scope.",
+          "type": "string",
+          "const": "dialog:deny-save",
+          "markdownDescription": "Denies the save command without any pre-configured scope."
         },
         {
           "description": "No features are enabled by default, as we believe\nthe shortcuts can be inherently dangerous and it is\napplication specific if specific shortcuts should be\nregistered or unregistered.\n",

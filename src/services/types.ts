@@ -30,12 +30,73 @@ export interface WallpaperEngineSettingsInput {
   wallpaperFiles: Partial<Record<SceneKey, string>>;
 }
 
+export type WallpaperSourceMode = "library" | "wallpaper-engine" | "internal";
+
+export type WallpaperPlaybackMode = "single" | "shuffle";
+
+export type WallpaperMediaKind = "image" | "video";
+
+export interface WallpaperLibraryPreferences {
+  playbackMode: WallpaperPlaybackMode;
+  selectedId?: string;
+  enabledIds: string[];
+  shuffleIntervalMinutes: number;
+}
+
+/** Native metadata for a validated copy inside Ambient Glass's local data directory. */
+export interface NativeWallpaperLibraryItem {
+  id: string;
+  displayName: string;
+  kind: WallpaperMediaKind;
+  mimeType: string;
+  sizeBytes: number;
+  importedAt: string;
+  /** Bridge-only destination. Never persist, display, or log this value. */
+  filePath: string;
+}
+
+export interface NativeWallpaperLibrarySnapshot {
+  items: NativeWallpaperLibraryItem[];
+  totalBytes: number;
+  ignoredCount: number;
+}
+
+export type WallpaperImportFailureReason = "unsupported" | "tooLarge" | "unreadable" | "copyFailed";
+
+export interface WallpaperImportFailure {
+  displayName: string;
+  reason: WallpaperImportFailureReason;
+}
+
+export interface WallpaperImportResult {
+  library: NativeWallpaperLibrarySnapshot;
+  importedIds: string[];
+  duplicateIds: string[];
+  rejected: WallpaperImportFailure[];
+}
+
+/** Renderer-safe library item. `src` is an asset URL or bundled preview URL. */
+export interface WallpaperLibraryItem extends Omit<NativeWallpaperLibraryItem, "filePath"> {
+  src: string;
+  preview: boolean;
+}
+
+export interface WallpaperLibraryState {
+  items: WallpaperLibraryItem[];
+  totalBytes: number;
+  ignoredCount: number;
+  native: boolean;
+}
+
 /** Frontend-persisted wallpaper preferences, safe for Tauri Store/local storage. */
 export interface WallpaperSettings extends WallpaperEngineSettingsInput {
-  version: 2;
+  version: 3;
+  sourceMode: WallpaperSourceMode;
   /** Selects which display hosts the regular Ambient Glass app window. */
   overlayMonitorIndex: number;
   sceneLock: SceneLock;
+  library: WallpaperLibraryPreferences;
+  /** Compatibility alias for the existing settings UI; v3 sourceMode is authoritative. */
   fallbackMode: "automatic" | "force-internal";
 }
 

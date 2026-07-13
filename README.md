@@ -1,12 +1,12 @@
 # Ambient Glass
 
-Ambient Glass turns a spare Windows laptop into a quiet, cinematic information display. It is a Tauri 2 + React + TypeScript desktop app designed around a restrained Liquid Glass composition: the internal scene remains the artwork; time, weather, reminders, tasks, scores, and alarms surface only when useful.
+Ambient Glass turns a spare Windows laptop into a quiet, cinematic information display. It is a Tauri 2 + React + TypeScript desktop app designed around a restrained Liquid Glass composition: the wallpaper remains the artwork; time, weather, reminders, tasks, scores, and alarms surface only when useful.
 
 The supplied visual source of truth is [design/reference/glance.png](design/reference/glance.png). The behavioral product plan is [PLAN.md](PLAN.md).
 
 ## What is implemented
 
-- A polished, responsive 16:10 Liquid Glass preview matching the reference composition rather than a dashboard grid.
+- A polished, responsive 16:10 Liquid Glass preview matching the reference composition rather than a dashboard grid. Time and weather share one organic hero island; Calendar, Focus, GitHub, and a clean wallpaper beat rotate as one calm primary surface above a compact sports ribbon. The wide settings workspace keeps its header fixed and its content independently scrollable down to the 960×700 window minimum.
 - A centralized display state machine: `booting`, `sleep`, `ambient`, `awakening`, `glance`, `interactive`, `alarm`, `celebration`, and `settings`.
 - Deterministic preview controls through URL parameters and a shortcut-gated debug surface.
 - Local-first repeating tasks, weekday routines, date-based completion, local reminders, one-per-day celebration logic, native app-active alarm scheduling with a browser-audio fallback, and a morning-briefing transition.
@@ -14,6 +14,8 @@ The supplied visual source of truth is [design/reference/glance.png](design/refe
 - Local MediaPipe face-detection pipeline with persisted opt-in camera permission, hidden low-resolution stream, one-second sampling, no frame storage or upload.
 - Typed commands and explicit push-to-talk capture. Typed commands always work without credentials.
 - Credential-backed native GitHub, TheSportsDB, optional OpenAI transcription, and optional Google Calendar boundaries. Google uses installed-app PKCE OAuth in the system browser, keeps refresh tokens in the OS credential store, and normalizes only today's display-safe events.
+- Persisted favorite-team preferences for the sports ribbon. Up to eight ordered favorites can be added from the current feed or by name and optional TheSportsDB team ID; favorites can lead the calm status ordering or hide unrelated games entirely.
+- An app-owned image/video wallpaper library with native multi-file import, local copies, gallery selection, single-wallpaper and no-repeat shuffle modes, configurable intervals, removal, and explicit source selection between **My wallpapers**, **Wallpaper Engine**, and **Calm fallback**. Browser preview uses bundled deterministic media and never reads user files.
 - A narrow native Wallpaper Engine adapter that validates scene keys, specific wallpaper files, and executable layout before opening Wallpaper Engine in its named in-window surface behind the app; settings persist a default file, optional per-scene file overrides, manual scene lock, fallback choice, and app-window display selection.
 - Tauri settings persistence, autostart, app-active native alarms, native notification, secure credentials, and Windows source configuration. These native behaviors require the Windows validation pass below.
 
@@ -71,9 +73,17 @@ npm run tauri build
 
 ## Daily-use setup
 
-### Wallpaper Engine
+### Wallpapers
 
-Choose a specific Wallpaper Engine project or supported media file for the app background. In Wallpaper Engine, right-click the subscribed wallpaper, choose **Open in Explorer**, and copy the path to its `project.json` or packaged scene file. You can also use a supported video or web-wallpaper entry file. Paste that file path into **In-app wallpaper** in Ambient Glass settings.
+The default **My wallpapers** source is independent of Wallpaper Engine. In the native app, choose **Add wallpapers** to select multiple JPG/JPEG, PNG, WebP, MP4, or WebM files. Ambient Glass validates each file and copies it into its own local data directory, so moving or deleting the original does not break the display. The gallery can show any available item immediately, include or exclude items from the shuffle, remove app-owned copies, and open the managed folder.
+
+Choose **Keep one** for a fixed wallpaper or **Shuffle selected** to cycle through every enabled item before refilling the random bag. The available intervals are 5, 15, 30, 60, 120, and 240 minutes. Images and muted looping videos crossfade behind the glass UI; the calm internal scene remains underneath so a missing or unreadable asset cannot create a blank display. Library preferences are non-secret local settings.
+
+The browser preview shows bundled deterministic wallpapers so the complete source/gallery UI remains testable without filesystem access, credentials, or Windows-only APIs. Import, removal, and **Open folder** are native-only.
+
+### Wallpaper Engine (optional)
+
+Select **Wallpaper Engine** as the wallpaper source, then choose a specific Wallpaper Engine project or supported media file for the app background. In Wallpaper Engine, right-click the subscribed wallpaper, choose **Open in Explorer**, and copy the path to its `project.json` or packaged scene file. You can also use a supported video or web-wallpaper entry file. Paste that file path into **In-app wallpaper** in Ambient Glass settings.
 
 ```text
 project.json
@@ -101,7 +111,7 @@ Open settings, choose **Use current location**, then allow the browser/webview l
 
 Use the native settings surface to connect GitHub, TheSportsDB, and optional OpenAI transcription. Tokens are never placed in `VITE_*` variables, source, screenshots, or logs. Browser preview has no access to these provider paths and therefore uses deterministic mocks by design; a normal launch starts with no fabricated tasks, alarms, scores, commits, or events.
 
-GitHub’s visible count is labeled **“commits today”** only when it represents `contributionsCollection.totalCommitContributions`; it is not mislabeled as all contributions. Sports are normalized before rendering, then sorted live → upcoming → final in one calm ribbon. Normalized same-day cache values remain visibly stale after a disconnect instead of becoming demo data. The local calendar/reminder layer remains usable when Google Calendar is disconnected.
+GitHub’s visible count is labeled **“commits today”** only when it represents `contributionsCollection.totalCommitContributions`; it is not mislabeled as all contributions. Sports are normalized before rendering, then sorted live → upcoming → final in one calm ribbon, with ordered favorites leading within each group. A favorite with a numeric TheSportsDB team ID also adds bounded previous/next schedule requests; a name-only favorite can still match and filter events already in the feed. The **Show only favorites** setting hides unrelated games once a favorite exists. Normalized same-day cache values remain visibly stale after a disconnect instead of becoming demo data. The local calendar/reminder layer remains usable when Google Calendar is disconnected.
 
 ### Google Calendar (optional)
 
@@ -119,26 +129,28 @@ Alarms work while Ambient Glass and the computer remain running. In a native bui
 
 ## Windows/Dell validation still required
 
-This repository was browser-verified and native-source-checked on macOS. The full native GUI/package could not run here because full Xcode is unavailable, and Windows, Wallpaper Engine, and the Dell hardware are outside this host. Do not treat source or browser evidence as proof of desktop behavior. Perform and record these checks on the Dell:
+This repository was browser-verified and native-source-checked on macOS. The full native GUI/package could not run here because full Xcode is unavailable, and Windows, Wallpaper Engine, and the Dell hardware are outside this host. **Windows/Dell runtime validation remains unverified.** Do not treat source or browser evidence as proof of desktop behavior. Perform and record these checks on the Dell:
 
-1. Standard resizable taskbar window, title-bar close/minimize/maximize controls, hidden startup flash prevention, and responsive input in every app mode.
-2. Confirm the configured default wallpaper file renders inside the app, remains aligned through move/resize/minimize/restore, and never changes the Windows desktop background; then test any clear/rain/day/night file overrides.
-3. Webcam permission, local presence reveal/dismiss, keyboard/pointer recovery, `Ctrl+Shift+Space` recovery when available, and long-absence sleep.
-4. Local task persistence, celebration, reminder, alarm, notification, and morning briefing.
-5. Each configured provider independently, including secure token storage and revoked/disconnected behavior. Build with a configured Google Desktop client ID, complete the system-browser OAuth flow, verify today-sync/event creation, then revoke access and verify the local-first fallback.
-6. Startup after a Windows restart, plus a 20-minute CPU/GPU/fan observation with Wallpaper Engine running.
-7. Offline fallback with network disconnected.
+1. Standard resizable taskbar window, title-bar close/minimize/maximize controls, hidden startup flash prevention, and responsive input in every app mode. At 960×700, confirm settings remain internally scrollable, the close control stays visible, and keyboard focus returns correctly.
+2. Import multiple images and videos into the app-owned library; confirm copies survive moving the originals and an app restart, gallery selection and removal work, video playback is compatible with WebView2, shuffle visits enabled items without immediate repeats, source switching is reliable, and failed media reveals the calm fallback.
+3. Select the optional Wallpaper Engine source. Confirm its configured file renders inside the app, remains aligned through move/resize/minimize/restore, and never changes the Windows desktop background; then test any clear/rain/day/night file overrides.
+4. Webcam permission, local presence reveal/dismiss, keyboard/pointer recovery, `Ctrl+Shift+Space` recovery when available, and long-absence sleep.
+5. Local task persistence, celebration, reminder, alarm, notification, and morning briefing.
+6. Each configured provider independently, including secure token storage and revoked/disconnected behavior. Verify favorite-team ordering/filtering and numeric-ID schedule refreshes against TheSportsDB. Build with a configured Google Desktop client ID, complete the system-browser OAuth flow, verify today-sync/event creation, then revoke access and verify the local-first fallback.
+7. Startup after a Windows restart, plus a 20-minute CPU/GPU/fan observation with app-owned video and Wallpaper Engine sources.
+8. Offline fallback with network disconnected.
 
 The exact current evidence and limits live in [artifacts/verification/p0-checklist.md](artifacts/verification/p0-checklist.md) and [PROGRESS.md](PROGRESS.md).
 
 ## Security notes
 
-- No unrestricted shell, filesystem, process, or opener permissions are granted to the frontend. The sole opener permission is native-only and restricted to Google’s authorization host for Calendar OAuth.
+- No unrestricted shell, filesystem, process, or opener permissions are granted to the frontend. Google authorization is restricted to its expected host, and the custom wallpaper-folder command can open only Ambient Glass's fixed app-local library directory.
+- App-owned wallpaper imports are bounded, structure-checked, content-addressed, and deduplicated. The Rust command owns the native picker, so original source paths never enter renderer memory and are neither persisted nor returned; renderer access is limited to the managed image/video asset scope.
 - Wallpaper Engine executable and wallpaper-file input are validated twice and invoked through separated process arguments; no playlist or monitor targeting is exposed.
 - Camera frames stay local and ephemeral.
 - Ambient Glass no longer installs a Windows session-input poller; the normal app window receives its own keyboard and pointer events directly.
 - Microphone capture happens only while the user explicitly holds the voice control; temporary audio is discarded after the native transcription request.
-- Non-secret app state uses browser fallback storage during preview and Tauri Store in a native build. Secrets belong in the native credential boundary, never frontend bundles.
+- Non-secret app state—including wallpaper source/shuffle choices and favorite teams—uses browser fallback storage during preview and Tauri Store in a native build. Secrets belong in the native credential boundary, never frontend bundles.
 
 ## Project layout
 

@@ -55,6 +55,7 @@ export interface ContributionCell {
 export interface ScoreTeamDisplay {
   name: string;
   shortName?: string;
+  badgeUrl?: string;
   score?: number | string;
   color?: string;
   mark?: string;

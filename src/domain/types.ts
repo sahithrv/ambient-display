@@ -149,9 +149,12 @@ export interface Alarm {
 export interface SportsEvent {
   id: string;
   sport: string;
+  leagueId?: string;
   league: string;
   startTime: IsoDateTime;
+  homeTeamId?: string;
   homeName: string;
+  awayTeamId?: string;
   awayName: string;
   homeBadgeUrl?: string;
   awayBadgeUrl?: string;
@@ -161,9 +164,23 @@ export interface SportsEvent {
   clockOrPeriod?: string;
 }
 
+/** A non-secret, provider-normalized team choice stored in local settings. */
+export interface SportsTeamPreference {
+  /** TheSportsDB's stable numeric team ID when known. Name-only choices remain useful for filtering. */
+  id?: string;
+  name: string;
+  league?: string;
+  sport?: string;
+  badgeUrl?: string;
+}
+
 export interface SportsPreferences {
-  favoriteTeams?: string[];
-  favoriteLeagues?: string[];
+  version: 1;
+  /** Array order is the user's display priority within a live/upcoming/final group. */
+  favoriteTeams: SportsTeamPreference[];
+  favoriteLeagues: string[];
+  /** Once favorites exist, hide unrelated events instead of merely deprioritizing them. */
+  showOnlyFavorites: boolean;
 }
 
 export interface LocalData {

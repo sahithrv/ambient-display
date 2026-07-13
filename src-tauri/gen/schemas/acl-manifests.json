@@ -37,6 +37,11 @@
         "description": "Enables the delete_provider_secret command without any pre-configured scope.",
         "commands": { "allow": ["delete_provider_secret"], "deny": [] }
       },
+      "allow-delete-wallpaper-asset": {
+        "identifier": "allow-delete-wallpaper-asset",
+        "description": "Enables the delete_wallpaper_asset command without any pre-configured scope.",
+        "commands": { "allow": ["delete_wallpaper_asset"], "deny": [] }
+      },
       "allow-disconnect-google-calendar": {
         "identifier": "allow-disconnect-google-calendar",
         "description": "Enables the disconnect_google_calendar command without any pre-configured scope.",
@@ -87,10 +92,20 @@
         "description": "Enables the list_native_alarms command without any pre-configured scope.",
         "commands": { "allow": ["list_native_alarms"], "deny": [] }
       },
+      "allow-list-wallpaper-library": {
+        "identifier": "allow-list-wallpaper-library",
+        "description": "Enables the list_wallpaper_library command without any pre-configured scope.",
+        "commands": { "allow": ["list_wallpaper_library"], "deny": [] }
+      },
       "allow-mark-overlay-ready": {
         "identifier": "allow-mark-overlay-ready",
         "description": "Enables the mark_overlay_ready command without any pre-configured scope.",
         "commands": { "allow": ["mark_overlay_ready"], "deny": [] }
+      },
+      "allow-pick-and-import-wallpapers": {
+        "identifier": "allow-pick-and-import-wallpapers",
+        "description": "Enables the pick_and_import_wallpapers command without any pre-configured scope.",
+        "commands": { "allow": ["pick_and_import_wallpapers"], "deny": [] }
       },
       "allow-quit-application": {
         "identifier": "allow-quit-application",
@@ -101,6 +116,11 @@
         "identifier": "allow-refresh-sports",
         "description": "Enables the refresh_sports command without any pre-configured scope.",
         "commands": { "allow": ["refresh_sports"], "deny": [] }
+      },
+      "allow-reveal-wallpaper-library": {
+        "identifier": "allow-reveal-wallpaper-library",
+        "description": "Enables the reveal_wallpaper_library command without any pre-configured scope.",
+        "commands": { "allow": ["reveal_wallpaper_library"], "deny": [] }
       },
       "allow-save-provider-secret": {
         "identifier": "allow-save-provider-secret",
@@ -177,6 +197,11 @@
         "description": "Denies the delete_provider_secret command without any pre-configured scope.",
         "commands": { "allow": [], "deny": ["delete_provider_secret"] }
       },
+      "deny-delete-wallpaper-asset": {
+        "identifier": "deny-delete-wallpaper-asset",
+        "description": "Denies the delete_wallpaper_asset command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["delete_wallpaper_asset"] }
+      },
       "deny-disconnect-google-calendar": {
         "identifier": "deny-disconnect-google-calendar",
         "description": "Denies the disconnect_google_calendar command without any pre-configured scope.",
@@ -227,10 +252,20 @@
         "description": "Denies the list_native_alarms command without any pre-configured scope.",
         "commands": { "allow": [], "deny": ["list_native_alarms"] }
       },
+      "deny-list-wallpaper-library": {
+        "identifier": "deny-list-wallpaper-library",
+        "description": "Denies the list_wallpaper_library command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["list_wallpaper_library"] }
+      },
       "deny-mark-overlay-ready": {
         "identifier": "deny-mark-overlay-ready",
         "description": "Denies the mark_overlay_ready command without any pre-configured scope.",
         "commands": { "allow": [], "deny": ["mark_overlay_ready"] }
+      },
+      "deny-pick-and-import-wallpapers": {
+        "identifier": "deny-pick-and-import-wallpapers",
+        "description": "Denies the pick_and_import_wallpapers command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["pick_and_import_wallpapers"] }
       },
       "deny-quit-application": {
         "identifier": "deny-quit-application",
@@ -241,6 +276,11 @@
         "identifier": "deny-refresh-sports",
         "description": "Denies the refresh_sports command without any pre-configured scope.",
         "commands": { "allow": [], "deny": ["refresh_sports"] }
+      },
+      "deny-reveal-wallpaper-library": {
+        "identifier": "deny-reveal-wallpaper-library",
+        "description": "Denies the reveal_wallpaper_library command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["reveal_wallpaper_library"] }
       },
       "deny-save-provider-secret": {
         "identifier": "deny-save-provider-secret",
@@ -2165,6 +2205,67 @@
         "identifier": "deny-unminimize",
         "description": "Denies the unminimize command without any pre-configured scope.",
         "commands": { "allow": [], "deny": ["unminimize"] }
+      }
+    },
+    "permission_sets": {},
+    "global_scope_schema": null
+  },
+  "dialog": {
+    "default_permission": {
+      "identifier": "default",
+      "description": "This permission set configures the types of dialogs\navailable from the dialog plugin.\n\n#### Granted Permissions\n\nAll dialog types are enabled.\n\n\n",
+      "permissions": ["allow-message", "allow-save", "allow-open"]
+    },
+    "permissions": {
+      "allow-ask": {
+        "identifier": "allow-ask",
+        "description": "Enables the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)",
+        "commands": { "allow": ["message"], "deny": [] }
+      },
+      "allow-confirm": {
+        "identifier": "allow-confirm",
+        "description": "Enables the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `allow-message` and will be removed in v3)",
+        "commands": { "allow": ["message"], "deny": [] }
+      },
+      "allow-message": {
+        "identifier": "allow-message",
+        "description": "Enables the message command without any pre-configured scope.",
+        "commands": { "allow": ["message"], "deny": [] }
+      },
+      "allow-open": {
+        "identifier": "allow-open",
+        "description": "Enables the open command without any pre-configured scope.",
+        "commands": { "allow": ["open"], "deny": [] }
+      },
+      "allow-save": {
+        "identifier": "allow-save",
+        "description": "Enables the save command without any pre-configured scope.",
+        "commands": { "allow": ["save"], "deny": [] }
+      },
+      "deny-ask": {
+        "identifier": "deny-ask",
+        "description": "Denies the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)",
+        "commands": { "allow": [], "deny": ["message"] }
+      },
+      "deny-confirm": {
+        "identifier": "deny-confirm",
+        "description": "Denies the confirm command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)",
+        "commands": { "allow": [], "deny": ["message"] }
+      },
+      "deny-message": {
+        "identifier": "deny-message",
+        "description": "Denies the message command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["message"] }
+      },
+      "deny-open": {
+        "identifier": "deny-open",
+        "description": "Denies the open command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["open"] }
+      },
+      "deny-save": {
+        "identifier": "deny-save",
+        "description": "Denies the save command without any pre-configured scope.",
+        "commands": { "allow": [], "deny": ["save"] }
       }
     },
     "permission_sets": {},

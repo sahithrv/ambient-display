@@ -15,6 +15,7 @@ import {
   createDefaultWallpaperSettings,
   deriveWallpaperFallback,
   loadWallpaperSettings,
+  normalizeWallpaperSettings,
   saveWallpaperSettings,
   validateWallpaperSettings,
   WALLPAPER_SCENE_KEYS,
@@ -22,6 +23,8 @@ import {
 import type { WallpaperFallbackState, WallpaperSettings } from "../services/types";
 
 export interface WallpaperSetupProps extends HTMLAttributes<HTMLElement> {
+  /** Optional persisted value lets the app shell share one source of truth with the library. */
+  settingsValue?: WallpaperSettings;
   /** Optional outer status lets an app-level health surface stay in sync. */
   engineStatus?: WallpaperEngineStatus | null;
   /** Pass a controlled lock when the app owns scene orchestration state. */
@@ -31,14 +34,20 @@ export interface WallpaperSetupProps extends HTMLAttributes<HTMLElement> {
   onEngineStatusChange?: (status: WallpaperEngineStatus) => void;
   onSettingsApplied?: (settings: WallpaperSettings) => void;
   onSceneTest?: (scene: SceneKey, result: WallpaperSceneResult) => void;
+  /** Controlled mode delegates native test ownership to the app lifecycle. */
+  onSceneTestRequest?: (
+    scene: SceneKey,
+    settings: WallpaperSettings,
+  ) => Promise<WallpaperSceneResult>;
 }
 
 /**
- * Non-secret Wallpaper Engine setup. It owns a persisted settings draft and
- * only invokes the narrow native configuration/test commands exposed by the
- * Tauri bridge; no shell command, token, or arbitrary process data reaches it.
+ * Non-secret Wallpaper Engine setup. In standalone use it owns persistence;
+ * with `settingsValue`, the app shell is the sole persistence owner. Native
+ * calls remain narrow: no shell command, token, or process data reaches it.
  */
 export function WallpaperSetup({
+  settingsValue,
   engineStatus,
   sceneLock,
   onSceneLockChange,
@@ -46,10 +55,13 @@ export function WallpaperSetup({
   onEngineStatusChange,
   onSettingsApplied,
   onSceneTest,
+  onSceneTestRequest,
   className = "",
   ...props
 }: WallpaperSetupProps) {
-  const [settings, setSettings] = useState<WallpaperSettings>(createDefaultWallpaperSettings);
+  const [settings, setSettings] = useState<WallpaperSettings>(
+    settingsValue ?? createDefaultWallpaperSettings,
+  );
   const [nativeStatus, setNativeStatus] = useState<WallpaperEngineStatus | null>(
     engineStatus ?? null,
   );
@@ -85,12 +97,14 @@ export function WallpaperSetup({
 
   const persistOnly = useCallback(
     async (next: WallpaperSettings) => {
-      const saved = await saveWallpaperSettings(next);
+      const saved = settingsValue
+        ? normalizeWallpaperSettings(next)
+        : await saveWallpaperSettings(next);
       setSettings(saved);
       onSettingsApplied?.(saved);
       return saved;
     },
-    [onSettingsApplied],
+    [onSettingsApplied, settingsValue],
   );
 
   const applySettings = useCallback(
@@ -104,6 +118,20 @@ export function WallpaperSetup({
       setApplying(true);
       const saved = await persistOnly(next);
       onSceneLockChange?.(saved.sceneLock);
+      if (settingsValue) {
+        setApplying(false);
+        if (!quiet) {
+          setMessage("Wallpaper Engine settings queued for the app controller.");
+        }
+        return true;
+      }
+      if (saved.sourceMode !== "wallpaper-engine") {
+        setApplying(false);
+        if (!quiet) {
+          setMessage("Wallpaper source updated.");
+        }
+        return true;
+      }
       if (!isTauriRuntime()) {
         setApplying(false);
         if (!quiet) {
@@ -135,7 +163,7 @@ export function WallpaperSetup({
       }
       return true;
     },
-    [announceStatus, onSceneLockChange, persistOnly],
+    [announceStatus, onSceneLockChange, persistOnly, settingsValue],
   );
 
   useEffect(() => {
@@ -143,11 +171,22 @@ export function WallpaperSetup({
   }, [fallback, onFallbackChange]);
 
   useEffect(() => {
+    if (!settingsValue) {
+      return;
+    }
+    const timer = window.setTimeout(() => setSettings(settingsValue), 0);
+    return () => window.clearTimeout(timer);
+  }, [settingsValue]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => void refreshDisplayMonitors(), 0);
     return () => window.clearTimeout(timer);
   }, [refreshDisplayMonitors]);
 
   useEffect(() => {
+    if (settingsValue) {
+      return;
+    }
     let cancelled = false;
     void loadWallpaperSettings().then((saved) => {
       if (cancelled) {
@@ -170,7 +209,7 @@ export function WallpaperSetup({
     return () => {
       cancelled = true;
     };
-  }, [applySettings, onSceneLockChange]);
+  }, [applySettings, onSceneLockChange, settingsValue]);
 
   const updateSettings = (update: (current: WallpaperSettings) => WallpaperSettings) => {
     setSettings((current) => update(current));
@@ -180,12 +219,6 @@ export function WallpaperSetup({
     const next = { ...settings, sceneLock: lock };
     setSettings(next);
     onSceneLockChange?.(lock);
-    void persistOnly(next);
-  };
-
-  const updateFallbackMode = (fallbackMode: WallpaperSettings["fallbackMode"]) => {
-    const next = { ...settings, fallbackMode };
-    setSettings(next);
     void persistOnly(next);
   };
 
@@ -205,6 +238,29 @@ export function WallpaperSetup({
   };
 
   const testScene = async (scene: SceneKey) => {
+    if (settingsValue) {
+      const controlledSettings = normalizeWallpaperSettings(settings);
+      const validation = validateWallpaperSettings(controlledSettings);
+      if (!validation.valid) {
+        setMessage(validation.message ?? "Wallpaper settings need attention.");
+        return;
+      }
+      setTestingScene(scene);
+      const result = onSceneTestRequest
+        ? await onSceneTestRequest(scene, controlledSettings)
+        : {
+            applied: false,
+            duplicate: false,
+            mocked: false,
+            inApp: false,
+            message: "Scene testing is waiting for the app wallpaper controller.",
+          };
+      setTestingScene(null);
+      setMessage(result.message);
+      onSceneTest?.(scene, result);
+      return;
+    }
+
     const applied = await applySettings(settings, true);
     if (!applied) {
       return;
@@ -341,17 +397,6 @@ export function WallpaperSetup({
             ))}
           </select>
         </label>
-        <label className="wallpaper-setup__fallback">
-          <input
-            checked={settings.fallbackMode === "force-internal"}
-            onChange={(event) =>
-              updateFallbackMode(event.target.checked ? "force-internal" : "automatic")
-            }
-            type="checkbox"
-          />
-          <span>Use the calm internal scene instead of the in-app Wallpaper Engine background</span>
-        </label>
-
         <details className="wallpaper-setup__scene-overrides">
           <summary>
             <strong>Optional weather and time overrides</strong>

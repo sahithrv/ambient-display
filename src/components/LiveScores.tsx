@@ -12,7 +12,10 @@ function TeamBadge({ team }: { team: ScoreTeamDisplay }) {
       aria-label={team.name}
     >
       <span className="score-team-badge__ring" />
-      <b>{team.mark ?? team.shortName?.slice(0, 1) ?? team.name.slice(0, 1)}</b>
+      {team.badgeUrl ? <img alt="" src={team.badgeUrl} /> : null}
+      <b className={team.badgeUrl ? "score-team-badge__fallback" : undefined}>
+        {team.mark ?? team.shortName?.slice(0, 1) ?? team.name.slice(0, 1)}
+      </b>
     </span>
   );
 }

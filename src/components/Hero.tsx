@@ -32,17 +32,19 @@ export function Hero({
       className={`hero${weather?.available === false ? " hero--weather-unavailable" : ""} ${className}`}
       aria-label="Current time and weather"
     >
-      <GlassIsland className="hero__clock-island" glow="none" radius="56px">
-        <HeroClock
-          time={time}
-          meridiem={meridiem}
-          dateLabel={dateLabel}
-          greeting={greeting}
-          name={name}
-          message={message}
-        />
+      <GlassIsland className="hero__island" glow="soft" variant="organic">
+        <div className="hero__layout">
+          <HeroClock
+            time={time}
+            meridiem={meridiem}
+            dateLabel={dateLabel}
+            greeting={greeting}
+            name={name}
+            message={message}
+          />
+          <WeatherCapsule className="hero__weather" embedded weather={weather} />
+        </div>
       </GlassIsland>
-      <WeatherCapsule weather={weather} />
     </section>
   );
 }

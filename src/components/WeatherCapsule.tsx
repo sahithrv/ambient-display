@@ -6,6 +6,8 @@ import { GlassIsland } from "./glass/GlassIsland";
 
 export interface WeatherCapsuleProps extends HTMLAttributes<HTMLElement> {
   weather?: WeatherDisplayData;
+  /** Renders only the weather content for use inside another glass surface. */
+  embedded?: boolean;
 }
 
 function WeatherGlyph({ kind = "partly-cloudy" }: { kind?: WeatherCondition }) {
@@ -112,10 +114,35 @@ function WeatherGlyph({ kind = "partly-cloudy" }: { kind?: WeatherCondition }) {
 
 export function WeatherCapsule({
   weather = DEFAULT_WEATHER,
+  embedded = false,
   className = "",
   ...props
 }: WeatherCapsuleProps) {
   if (weather.available === false) {
+    const unavailableContent = (
+      <>
+        <span className="weather-capsule__unavailable-icon" aria-hidden="true">
+          <Icon name="cloud-moon" size={24} />
+        </span>
+        <div className="weather-capsule__unavailable-copy">
+          <strong>Weather unavailable</strong>
+          <span>Check your location in Settings</span>
+        </div>
+      </>
+    );
+
+    if (embedded) {
+      return (
+        <section
+          {...props}
+          className={`weather-capsule weather-capsule--embedded weather-capsule--unavailable ${className}`}
+          aria-label="Weather unavailable"
+        >
+          {unavailableContent}
+        </section>
+      );
+    }
+
     return (
       <GlassIsland
         {...props}
@@ -124,25 +151,13 @@ export function WeatherCapsule({
         radius="36px"
         aria-label="Weather unavailable"
       >
-        <span className="weather-capsule__unavailable-icon" aria-hidden="true">
-          <Icon name="cloud-moon" size={24} />
-        </span>
-        <div className="weather-capsule__unavailable-copy">
-          <strong>Weather unavailable</strong>
-          <span>Check your location in Settings</span>
-        </div>
+        {unavailableContent}
       </GlassIsland>
     );
   }
 
-  return (
-    <GlassIsland
-      {...props}
-      className={`weather-capsule ${className}`}
-      glow="none"
-      radius="36px"
-      aria-label={`Weather: ${weather.temperature} degrees, ${weather.condition}`}
-    >
+  const weatherContent = (
+    <>
       <div className="weather-capsule__reading">
         <span className="weather-capsule__temperature">{weather.temperature}°</span>
         <span className="weather-capsule__condition">{weather.condition}</span>
@@ -162,6 +177,30 @@ export function WeatherCapsule({
           </span>
         ) : null}
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <section
+        {...props}
+        className={`weather-capsule weather-capsule--embedded ${className}`}
+        aria-label={`Weather: ${weather.temperature} degrees, ${weather.condition}`}
+      >
+        {weatherContent}
+      </section>
+    );
+  }
+
+  return (
+    <GlassIsland
+      {...props}
+      className={`weather-capsule ${className}`}
+      glow="none"
+      radius="36px"
+      aria-label={`Weather: ${weather.temperature} degrees, ${weather.condition}`}
+    >
+      {weatherContent}
     </GlassIsland>
   );
 }

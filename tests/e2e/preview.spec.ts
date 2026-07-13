@@ -19,27 +19,61 @@ test("deterministic glance closely follows the 16:10 reference", async ({ page }
   await page.goto(preview());
   await expect(page.getByRole("heading", { name: "Good evening, Sahith" })).toBeVisible();
   await expect(page.getByText("Partly cloudy", { exact: true })).toBeVisible();
-  await expect(page.getByText("5 commits today", { exact: true })).toBeVisible();
-  await expect(page.getByText("All tasks completed!", { exact: true })).toBeVisible();
+  await expect(page.getByText("Design Review", { exact: true })).toBeVisible();
+  await expect(page.locator(".ambient-display__primary > .calendar-card")).toBeVisible();
+  await expect(page.locator(".ambient-display__primary > .focus-card")).toHaveCount(0);
+  await expect(page.locator(".celebration-banner")).toHaveCount(0);
+
+  const heroLayout = await page.locator(".hero").evaluate((hero) => {
+    const surface = hero.querySelector<HTMLElement>(".hero__island")?.getBoundingClientRect();
+    const clock = hero.querySelector<HTMLElement>(".hero-clock")?.getBoundingClientRect();
+    const weather = hero.querySelector<HTMLElement>(".hero__weather")?.getBoundingClientRect();
+    if (!surface || !clock || !weather) return null;
+
+    return {
+      surface: {
+        left: surface.left,
+        right: surface.right,
+        top: surface.top,
+        bottom: surface.bottom,
+      },
+      clock: { left: clock.left, right: clock.right, top: clock.top, bottom: clock.bottom },
+      weather: {
+        left: weather.left,
+        right: weather.right,
+        top: weather.top,
+        bottom: weather.bottom,
+      },
+    };
+  });
+
+  expect(heroLayout).not.toBeNull();
+  expect(heroLayout!.weather.left).toBeGreaterThanOrEqual(heroLayout!.clock.right - 1);
+  expect(heroLayout!.weather.left).toBeGreaterThanOrEqual(heroLayout!.surface.left);
+  expect(heroLayout!.weather.right).toBeLessThanOrEqual(heroLayout!.surface.right + 1);
+  expect(heroLayout!.weather.top).toBeGreaterThanOrEqual(heroLayout!.surface.top);
+  expect(heroLayout!.weather.bottom).toBeLessThanOrEqual(heroLayout!.surface.bottom + 1);
   await capture(page, "clear-evening-glance-1920x1200");
 });
 
 test("rainy night remains composed at a second 16:10 viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(preview("time=22:15&weather=rain"));
+  await page.goto(preview("time=22:15&weather=rain&card=tasks"));
   await expect(page.getByText("Rain", { exact: true })).toBeVisible();
+  await expect(page.getByText("Today's Focus", { exact: true })).toBeVisible();
   await expect(page.locator(".scores-card")).toBeVisible();
   await capture(page, "rainy-night-glance-1440x900", 1440, 900);
 });
 
 test("refined glass mock is captured at desktop size", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(preview("time=20:18&weather=partly-cloudy"));
+  await page.goto(preview("time=20:18&weather=partly-cloudy&card=github"));
   await expect(page.getByRole("heading", { name: "Good evening, Sahith" })).toBeVisible();
+  await expect(page.getByText("5 commits today", { exact: true })).toBeVisible();
   await capture(page, "glass-refinement-1440x900", 1440, 900);
 });
 
-test("a short desktop window flows cards without overlap", async ({ page }) => {
+test("a short desktop window keeps cards in view without overlap", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 840 });
   await page.goto(preview("time=08:10"));
 
@@ -51,6 +85,11 @@ test("a short desktop window flows cards without overlap", async ({ page }) => {
         return { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom };
       }),
     );
+
+  for (const block of blocks) {
+    expect(block.top).toBeGreaterThanOrEqual(0);
+    expect(block.bottom).toBeLessThanOrEqual(840);
+  }
 
   for (let index = 0; index < blocks.length; index += 1) {
     for (let comparison = index + 1; comparison < blocks.length; comparison += 1) {
@@ -93,8 +132,13 @@ test("alarm, celebration, settings, and offline fallback render without layout f
 
   await page.goto(preview("mode=settings"));
   await expect(page.getByRole("dialog", { name: "Display settings" })).toBeVisible();
-  await expect(page.getByText("In-app wallpaper", { exact: true })).toBeVisible();
-  await expect(page.getByText("Google Calendar", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your atmosphere, kept locally" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "My wallpapers" })).toBeVisible();
+  await capture(page, "settings-1920x1200");
+
+  const googleCalendarHeading = page.getByText("Google Calendar", { exact: true });
+  await googleCalendarHeading.scrollIntoViewIfNeeded();
+  await expect(googleCalendarHeading).toBeVisible();
   await expect(
     page.getByText(
       "Google Calendar connects only from the native desktop app. Local reminders work in this preview.",
@@ -103,12 +147,101 @@ test("alarm, celebration, settings, and offline fallback render without layout f
       },
     ),
   ).toBeVisible();
-  await capture(page, "settings-1920x1200");
-
-  await page.goto(preview("offline=1"));
+  await page.goto(preview("offline=1&card=github"));
   await expect(page.locator(".scores-card")).toHaveCount(0);
   await expect(page.getByText("5 commits today", { exact: true })).toBeVisible();
   await capture(page, "offline-fallback-1920x1200");
+});
+
+test("settings remain usable at 960x700 and restore keyboard focus", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 700 });
+  await page.goto(preview());
+
+  const settingsTrigger = page.getByRole("button", { name: "Open settings" });
+  await settingsTrigger.focus();
+  await settingsTrigger.click();
+
+  const dialog = page.getByRole("dialog", { name: "Display settings" });
+  const closeButton = page.getByRole("button", { name: "Close settings" });
+  await expect(dialog).toBeVisible();
+  await expect(closeButton).toBeFocused();
+  await expect(page.locator(".ambient-display__islands")).toHaveCount(0);
+
+  const layout = await dialog.evaluate((element) => {
+    const panel = element.querySelector<HTMLElement>(".settings-surface__panel");
+    const body = element.querySelector<HTMLElement>(".settings-surface__body");
+    if (!panel || !body) return null;
+    const bounds = panel.getBoundingClientRect();
+    return {
+      bounds: {
+        left: bounds.left,
+        top: bounds.top,
+        right: bounds.right,
+        bottom: bounds.bottom,
+      },
+      body: {
+        clientWidth: body.clientWidth,
+        scrollWidth: body.scrollWidth,
+        clientHeight: body.clientHeight,
+        scrollHeight: body.scrollHeight,
+      },
+    };
+  });
+
+  expect(layout).not.toBeNull();
+  expect(layout!.bounds.left).toBeGreaterThanOrEqual(0);
+  expect(layout!.bounds.top).toBeGreaterThanOrEqual(0);
+  expect(layout!.bounds.right).toBeLessThanOrEqual(960);
+  expect(layout!.bounds.bottom).toBeLessThanOrEqual(700);
+  expect(layout!.body.scrollWidth).toBeLessThanOrEqual(layout!.body.clientWidth + 1);
+  expect(layout!.body.scrollHeight).toBeGreaterThan(layout!.body.clientHeight);
+  await capture(page, "settings-960x700", 960, 700);
+
+  await page.locator(".settings-surface__body").evaluate((body) => {
+    body.scrollTop = body.scrollHeight;
+  });
+  await expect(closeButton).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(settingsTrigger).toBeFocused();
+});
+
+test("wallpaper choice and favorite teams persist in browser preview", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 700 });
+  await page.goto(preview("mode=settings"));
+
+  const blueHour = page.getByRole("button", { name: "Use Blue Hour now" });
+  const keepOne = page.getByRole("button", { name: "Keep one" });
+  await blueHour.click();
+  await keepOne.click();
+  await expect(blueHour).toHaveAttribute("aria-pressed", "true");
+  await expect(keepOne).toHaveAttribute("aria-pressed", "true");
+
+  const warriors = page.getByRole("button", { name: "WA Warriors", exact: true });
+  await warriors.scrollIntoViewIfNeeded();
+  await warriors.click();
+  await expect(page.getByRole("button", { name: "Remove Warriors" })).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Show only favorites Unrelated games disappear once at least one team is chosen.",
+    }),
+  ).toBeChecked();
+
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await expect(page.locator(".score-match")).toHaveCount(1);
+  await expect(page.locator(".scores-card")).toContainText("WAR");
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Remove Warriors" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use Blue Hour now" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByRole("button", { name: "Keep one" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 test("local camera presence is an explicit persisted opt-in and preview stays camera-free", async ({
@@ -166,6 +299,25 @@ test("typed commands update local-first data and keyboard shortcut recovers the 
   await expect(page.getByText("Marked “review motion” complete.", { exact: true })).toBeVisible();
   await capture(page, "interactive-commands-1440x900", 1440, 900);
 
+  await command.fill("show my calendar");
+  await command.press("Enter");
+  await expect(page.locator(".calendar-card")).toBeVisible();
+  await expect(page.locator(".focus-card")).toHaveCount(0);
+
+  await command.fill("show sports");
+  await command.press("Enter");
+  await expect(page.locator(".scores-card")).toBeVisible();
+  await expect(page.locator(".ambient-display__primary")).toHaveCount(0);
+
+  await command.fill("show tasks");
+  await command.press("Enter");
+  await expect(page.locator(".focus-card")).toBeVisible();
+
+  await page.getByRole("button", { name: "Open settings" }).click();
+  await expect(page.getByRole("heading", { name: "Display settings" })).toBeVisible();
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await expect(command).toBeVisible();
+
   await page.goto(preview("mode=ambient&presence=0"));
   await expect(page.locator(".app-shell")).toHaveAttribute("data-display-mode", "ambient");
   await page.getByRole("button", { name: "Wake display" }).press("Control+Shift+Space");
@@ -182,9 +334,12 @@ test("a normal launch never presents preview fixtures as real daily data", async
 
   await expect(page.getByText("Weather unavailable", { exact: true })).toBeVisible();
   await expect(page.getByText("No events today", { exact: true })).toBeVisible();
-  await expect(page.getByText("Nothing planned yet", { exact: true })).toBeVisible();
   await expect(page.getByText("5 commits today", { exact: true })).toHaveCount(0);
   await expect(page.locator(".scores-card")).toHaveCount(0);
   await expect(page.getByText("Morning run", { exact: true })).toHaveCount(0);
   await capture(page, "classy-sparse-dell-1917x1093", 1917, 1093);
+
+  await page.goto("/?mode=glance&card=tasks");
+  await expect(page.getByText("Nothing planned yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("Morning run", { exact: true })).toHaveCount(0);
 });
